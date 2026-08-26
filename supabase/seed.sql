@@ -7,5 +7,5 @@
 --   $serviceKey = "<SERVICE_ROLE_KEY do output de `supabase start`>"
 --   Invoke-RestMethod -Uri "http://127.0.0.1:54321/auth/v1/admin/users" `
 --     -Headers @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" } `
---     -Method Post -Body (@{ email = "dev@local.test"; password = "senha-dev-12345"; email_confirm = $true } | ConvertTo-Json) `
+--     -Method Post -Body (@{ email = "<seu-email-de-teste>"; password = "<sua-senha-de-teste>"; email_confirm = $true } | ConvertTo-Json) `
 --     -ContentType "application/json"
