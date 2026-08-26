@@ -1,0 +1,11 @@
+-- Sem dados de seed genericos: toda tabela de negocio depende de um
+-- user_id valido em auth.users, e criar usuarios de auth via SQL cru e
+-- fragil (o schema interno do GoTrue muda entre versoes). Para ter um
+-- usuario de teste apos `supabase start` / `supabase db reset`, use a
+-- Admin API do GoTrue local:
+--
+--   $serviceKey = "<SERVICE_ROLE_KEY do output de `supabase start`>"
+--   Invoke-RestMethod -Uri "http://127.0.0.1:54321/auth/v1/admin/users" `
+--     -Headers @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" } `
+--     -Method Post -Body (@{ email = "dev@local.test"; password = "senha-dev-12345"; email_confirm = $true } | ConvertTo-Json) `
+--     -ContentType "application/json"

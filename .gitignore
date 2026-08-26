@@ -1,0 +1,22 @@
+# Node / Vite
+app/node_modules
+app/dist
+
+# Segredos locais -- nunca versionar
+.env
+app/.env
+app/.env.*
+!app/.env.example
+
+# Supabase CLI local
+supabase/.branches
+supabase/.temp
+
+# Migracao
+migracao/dados/*.csv
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
