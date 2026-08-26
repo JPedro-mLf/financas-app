@@ -318,7 +318,8 @@ from parcelamentos p
 cross join lateral generate_series(1, p.num_parcelas) as n;
 ```
 
-Demais views a implementar:
+Demais views (implementadas na v1 — a especificação original deixava o SQL
+em aberto; o design abaixo é o que foi construído e testado):
 
 | View | Responsabilidade |
 |---|---|
@@ -328,6 +329,26 @@ Demais views a implementar:
 | `v_resumo_ciclo` | Receitas, despesas, saldo do ciclo, previsto vs. realizado |
 | `v_previsao` | Saldo acumulado projetado ao longo de `horizonte_meses` |
 | `v_alertas` | Sinaliza saldo negativo previsto dentro do horizonte |
+
+Decisões de design tomadas na implementação:
+
+- **`v_recorrentes_ciclo`** gera uma ocorrência por mês calendário a partir de
+  `dia_referencia` (com clamp para o último dia do mês, ex.: dia 31 em
+  fevereiro), e passa essa data por `ciclo_caixa()` — ou seja, um recorrente
+  pago no crédito também desloca de ciclo, igual a uma compra avulsa. A janela
+  de geração usa uma folga de 2 meses sobre `horizonte_meses` porque o crédito
+  pode empurrar a ocorrência para o ciclo seguinte; um filtro final corta de
+  volta exatamente no horizonte configurado.
+- **`v_fluxo`** trata parcelamentos e avulsos como sempre `'pago'`: ao
+  contrário dos recorrentes, eles não passam por confirmação por ciclo — são
+  lançados quando o fato já ocorreu (a compra foi feita, o parcelamento foi
+  contratado). O sufixo de exibição `"(n/total)"` da descrição das parcelas é
+  aplicado só aqui, na união, para manter `v_parcelas` fiel ao SQL literal da
+  especificação.
+- **`v_previsao`** ancora a projeção na linha mais recente de `saldos` por
+  usuário. Sem nenhuma conciliação registrada não há ponto de partida — o
+  usuário simplesmente não aparece na view até registrar o primeiro saldo
+  apurado em Configuração.
 
 ---
 
@@ -342,6 +363,17 @@ Demais views a implementar:
 - **Teste obrigatório antes de inserir dado real:** tentar ler as tabelas com a
   chave `anon` sem sessão autenticada. O resultado deve ser vazio. Se retornar
   qualquer linha, o RLS está incorreto e o projeto não avança.
+
+> **Descoberta na implementação:** RLS sozinho não basta. Por padrão, o
+> Supabase não expõe mais tabelas, views e funções novas às roles da API
+> (`anon`, `authenticated`) sem `GRANT` explícito — sem os `GRANT`s, o teste
+> acima daria "vazio" pelo motivo errado (permissão negada, não RLS), e pior:
+> as views quebrariam para todo usuário autenticado, porque as funções de
+> calendário são chamadas de dentro de views `security_invoker`, e o Postgres
+> cobra `EXECUTE` de quem está consultando, não de quem criou a view. A v1
+> concede `SELECT` em todas as tabelas para `anon` e `authenticated` (mais
+> `INSERT/UPDATE/DELETE` só para `authenticated`), `SELECT` nas views para
+> `authenticated`, e `EXECUTE` nas 5 funções de calendário para `authenticated`.
 
 ---
 
@@ -362,6 +394,27 @@ PWA instalável na tela inicial. Prioridade absoluta: **velocidade de lançament
 
 Fora do escopo da v1: gráficos elaborados (é papel do Power BI), múltiplos
 usuários, anexos, integração bancária.
+
+> **Nota histórica (bugs de implementação — não reintroduzir):** o fluxo de
+> MFA só existe porque o app foi testado de ponta a ponta num navegador de
+> verdade (enroll real + código TOTP válido gerado a partir do segredo +
+> desafio no login), não só por inspeção de código. Dois bugs reais só
+> apareceram assim:
+>
+> 1. **O formulário de desafio de MFA ficava visível na tela de login antes
+>    da hora.** Causa: a regra `.form { display: flex }` do CSS do app tem a
+>    mesma especificidade do `[hidden]` padrão do navegador, e CSS de autor
+>    vence CSS de agente de usuário em empate de especificidade — então
+>    `hidden` parava de esconder qualquer elemento com `class="form"`.
+>    Corrigido com `[hidden] { display: none !important; }` explícito no
+>    stylesheet.
+> 2. **O QR code do enrolamento de MFA aparecia como texto bruto**
+>    (`data:image/svg+xml;utf-8,...`) em vez de imagem. Causa:
+>    `supabase.auth.mfa.enroll()` devolve `totp.qr_code` já como **data URI
+>    completa**, não como marcação SVG crua — inserir isso via `innerHTML`
+>    faz o navegador tratar o prefixo da URI como texto solto antes da tag
+>    `<svg>`. Corrigido usando `<img src="{qr_code}">` em vez de injetar o
+>    valor direto no HTML.
 
 ---
 
@@ -401,3 +454,41 @@ Origem: planilha com as abas `Lançamentos`, `Lançamentos Diversos`,
 - Criptografia client-side do campo `descricao`.
 - Calibração automática dos valores estimados a partir do histórico.
 - Metas de gasto por categoria.
+
+---
+
+## 13. Registro de implementação (v1)
+
+> Acrescentado após a primeira rodada de implementação. Mesmo espírito da
+> nota histórica da seção 4: isto é histórico — não apagar ao evoluir o
+> projeto, só acrescentar.
+
+### Ambiente e stack (decisões tomadas, não estavam fechadas na v1 original)
+
+- **Banco, dev/teste:** Supabase CLI local + Docker Desktop (WSL2). Permite
+  rodar `supabase start` e `supabase test db` sem depender de conta cloud
+  durante o desenvolvimento; a conta Supabase Cloud só entra no deploy
+  (fase 6).
+- **Front-end:** Vite + TypeScript + vanilla, sem framework, com
+  `vite-plugin-pwa` para manifest e service worker. Router próprio por hash
+  (`app/src/router.ts`), sem biblioteca de roteamento externa.
+
+### Portões da seção 10 — status
+
+- **Calendário:** 23 testes pgTAP verdes
+  (`supabase/tests/database/01_calendario.sql`), cobrindo os 12 meses de
+  2026, fevereiro bissexto de 2028, e os três casos de validação da seção 4
+  (crédito 10/set, pix 10/set, crédito 28/set).
+- **RLS:** 13 testes pgTAP verdes (`02_rls_leak.sql`) mais a verificação
+  manual, seguindo a letra da seção 8: chave `anon` real, sem sessão, contra
+  a API REST de verdade — zero linhas em todas as tabelas.
+
+### Status das fases da seção 10
+
+Fases 0–5 completas: schema, funções de calendário, RLS, views, e front-end
+PWA testado ponta a ponta num navegador real (login, configuração,
+categorias, lançamento rápido, parcelamento com projeção, ciclo atual,
+resumo, e o fluxo completo de MFA). Fases 6 (deploy), 7 (Power BI) e 8
+(migração de dados históricos) dependem de contas e ações que só o usuário
+pode fazer (Supabase Cloud, GitHub, exportar a planilha) e ainda não foram
+executadas.
