@@ -461,6 +461,57 @@ Origem: planilha com as abas `Lançamentos`, `Lançamentos Diversos`,
 - Parcelamentos finalizados são migrados como histórico, não descartados.
 - Exportar cada aba em CSV; script de importação idempotente e reexecutável.
 
+### Registro da migração (concluída)
+
+> Scripts em `migracao/` (fora do git -- repo público, planilha tem
+> descrições pessoais). `transformar.mjs` le o `.xlsm` e gera CSVs
+> normalizados em `migracao/saida/`, sem tocar no banco; `importar.mjs`
+> autentica como o próprio usuário (nunca `service_role`) e grava, checando
+> o que já existe antes de cada inserção.
+
+Decisões e descobertas que só apareceram ao migrar os dados de verdade:
+
+- **Formato numérico da planilha é dos EUA, não brasileiro:** vírgula separa
+  milhar e ponto é decimal (`R$3,765.60`), o oposto do que se assumiria à
+  primeira vista. Um parser inicial que assumia formato brasileiro cortava
+  valores acima de mil (ex.: `3765.60` virava `3.765`).
+- **4 categorias antigas misturavam despesa e receita**
+  (`Salário Folha Normal`, `Faturas Gerais`, `Empréstimo Bancos`,
+  `Transporte`) -- o schema novo exige um tipo único por categoria. Resolvido
+  mantendo o nome no tipo majoritário e roteando o tipo minoritário para
+  categorias genéricas `Outras receitas` / `Outras despesas`.
+- **Meio de pagamento não é o mesmo palpite para despesa e receita.** Um
+  fallback único de "crédito" para todo lançamento ambíguo produz absurdos
+  como salário "recebido no crédito". A regra final: despesa ambígua ->
+  crédito; receita ambígua -> pix (crédito não existe como meio de entrada
+  de dinheiro).
+- **Todo item fixo (salário, assinaturas, contas) também estava logado
+  individualmente, mês a mês, em `Lançamentos`** -- é assim que a planilha
+  antiga rastreava recorrência, sem o conceito de `execuções` do schema
+  novo. Migrar o cadastro fixo (`recorrentes`) E essas ocorrências mensais
+  (`avulsos`) teria duplicado todo mês histórico. Resolvido reconstituindo
+  cada ocorrência como uma linha em `execucoes`, com o ciclo calculado pela
+  própria função `ciclo_caixa` do banco via RPC -- nunca reimplementado em
+  JavaScript, para não abrir uma segunda fonte de verdade para a regra de
+  competência.
+- **`Contribuição INSS` e `Seguro de vida coorporativo` estavam
+  categorizados como despesa recorrente da categoria "Salário Folha
+  Normal"** -- exatamente o problema que a seção 6 já documentava. Migrados
+  para `descontos_folha` (INSS como 8,45% percentual, seguro como valor
+  fixo); as ocorrências históricas desses dois na antiga `Lançamentos` foram
+  descartadas, já que `descontos_folha` é uma regra, não um lançamento.
+- **Bug de importação:** `fatura_fecha`/`fatura_vence` leem a linha de
+  `config` do usuário sem filtro explícito (a própria RLS resolve). Sem uma
+  linha em `config`, `ciclo_caixa` para qualquer lançamento no crédito
+  retorna `null` silenciosamente (zero linhas casadas com `where`, não um
+  erro), quebrando a inserção de `execucoes` com violação de not-null. O
+  script de importação agora cria a `config` padrão (27/3/3) automaticamente
+  se ainda não existir, antes de qualquer outra coisa.
+- Dois casos ficaram de fora por decisão consciente, para revisão manual
+  futura direto no app: um parcelamento sem nenhuma parcela correspondente
+  em `Lançamentos`, e uma compra parcelada que nunca foi cadastrada na aba
+  `Parcelamentos` (migrada como avulsos soltos em vez de parcelamento).
+
 ---
 
 ## 12. Fase 2 (não implementar agora)
@@ -499,12 +550,14 @@ Origem: planilha com as abas `Lançamentos`, `Lançamentos Diversos`,
 
 ### Status das fases da seção 10
 
-Fases 0–5 completas: schema, funções de calendário, RLS, views, e front-end
-PWA testado ponta a ponta num navegador real (login, configuração,
-categorias, lançamento rápido, parcelamento com projeção, ciclo atual,
-resumo, e o fluxo completo de MFA). Fase 6 em andamento: projeto criado no
-Supabase Cloud (`Finances-DB`, região `sa-east-1`), `supabase link` e
-`supabase db push` feitos, e a verificação manual de RLS com a chave `anon`
-repetida contra o banco cloud (zero linhas, igual ao local). Falta o deploy
-do front-end no GitHub Pages e a Action anti-pausa. Fase 7 (Power BI) e
-fase 8 (migração de dados históricos) ainda não começaram.
+Fases 0–6 e 8 completas. Fase 7 (Power BI) é a única que falta.
+
+- **Fase 6 (deploy):** projeto Supabase Cloud criado (`Finances-DB`, região
+  `sa-east-1`), `supabase link` + `supabase db push` feitos, RLS verificado
+  também no cloud (zero linhas via `anon` real). Front-end publicado no
+  GitHub Pages (`.github/workflows/deploy.yml`) com Action de anti-pausa
+  diária (`keepalive.yml`). MFA cadastrado e testado na conta real, incluindo
+  dois bugs só visíveis contra o Cloud (ver nota histórica da seção 9).
+- **Fase 8 (migração):** dados históricos da planilha `Controle de Despesas`
+  migrados por completo -- ver seção 11 para as decisões e descobertas.
+- **Fase 7 (Power BI):** não iniciada.
