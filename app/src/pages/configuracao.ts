@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import { formatBRL } from '../lib/format';
+import { formatBRL, rotuloCiclo, todayISO } from '../lib/format';
 
 type Config = { dia_fechamento: number; dia_vencimento: number; horizonte_meses: number };
 type Categoria = { id: string; nome: string; tipo: 'receita' | 'despesa'; ativa: boolean };
@@ -8,12 +8,17 @@ type Desconto = { id: string; descricao: string; percentual: number | null; valo
 export async function renderConfiguracao(page: HTMLElement): Promise<void> {
   page.innerHTML = `<p>Carregando configuracao...</p>`;
 
-  const [userRes, configRes, categoriasRes, descontosRes, factorsRes] = await Promise.all([
+  const { data: cicloAtual } = await supabase.rpc('ciclo', { d: todayISO() });
+
+  const [userRes, configRes, categoriasRes, descontosRes, factorsRes, saldoRes] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from('config').select('*').maybeSingle(),
     supabase.from('categorias').select('id, nome, tipo, ativa').order('nome'),
     supabase.from('descontos_folha').select('id, descricao, percentual, valor_fixo').order('descricao'),
     supabase.auth.mfa.listFactors(),
+    cicloAtual
+      ? supabase.from('saldos').select('valor_apurado').eq('ciclo', cicloAtual).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const userId = userRes.data.user?.id;
@@ -21,6 +26,7 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
   const categorias = (categoriasRes.data ?? []) as Categoria[];
   const descontos = (descontosRes.data ?? []) as Desconto[];
   const mfaAtivo = (factorsRes.data?.totp ?? []).some((f) => f.status === 'verified');
+  const saldoAtual = saldoRes.data as { valor_apurado: number } | null;
 
   page.innerHTML = `
     <h1>Configuracao</h1>
@@ -75,6 +81,20 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
     </section>
 
     <section class="cartao">
+      <h2>Saldo apurado</h2>
+      <p>Usado como ponto de partida da previsao do horizonte (tela Resumo).
+        Registre aqui o saldo real da sua conta no ciclo atual${cicloAtual ? ` — ${rotuloCiclo(cicloAtual)}` : ''}.</p>
+      ${saldoAtual ? `<p>Saldo ja registrado neste ciclo: <strong>${formatBRL(saldoAtual.valor_apurado)}</strong></p>` : ''}
+      <form id="form-saldo" class="form">
+        <label>Saldo apurado (R$)
+          <input type="number" name="valor_apurado" step="0.01" value="${saldoAtual?.valor_apurado ?? ''}" required>
+        </label>
+        <button type="submit" ${cicloAtual ? '' : 'disabled'}>Salvar</button>
+        <p class="msg" id="msg-saldo" hidden></p>
+      </form>
+    </section>
+
+    <section class="cartao">
       <h2>Autenticacao em duas etapas</h2>
       <p>${mfaAtivo ? 'MFA ativo nesta conta.' : 'MFA ainda nao configurado.'}</p>
       ${mfaAtivo ? '' : '<button id="btn-mfa-enroll" type="button">Ativar MFA</button>'}
@@ -85,6 +105,7 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
   wireConfigForm(page, userId);
   wireCategoriaForm(page);
   wireDescontoForm(page);
+  wireSaldoForm(page, userId, cicloAtual);
   wireMfaEnroll(page);
 }
 
@@ -159,6 +180,27 @@ function wireDescontoForm(page: HTMLElement): void {
       msg.className = 'msg sucesso';
       form.reset();
     }
+  });
+}
+
+function wireSaldoForm(page: HTMLElement, userId: string | undefined, cicloAtual: string | null | undefined): void {
+  const form = page.querySelector<HTMLFormElement>('#form-saldo')!;
+  const msg = page.querySelector<HTMLParagraphElement>('#msg-saldo')!;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!cicloAtual) return;
+    const dados = new FormData(form);
+
+    const { error } = await supabase.from('saldos').upsert({
+      user_id: userId,
+      ciclo: cicloAtual,
+      valor_apurado: Number(dados.get('valor_apurado')),
+    });
+
+    msg.hidden = false;
+    msg.textContent = error ? `Erro: ${error.message}` : 'Salvo.';
+    msg.className = error ? 'msg erro' : 'msg sucesso';
   });
 }
 
