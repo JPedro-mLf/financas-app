@@ -332,13 +332,25 @@ em aberto; o design abaixo é o que foi construído e testado):
 
 Decisões de design tomadas na implementação:
 
-- **`v_recorrentes_ciclo`** gera uma ocorrência por mês calendário a partir de
-  `dia_referencia` (com clamp para o último dia do mês, ex.: dia 31 em
-  fevereiro), e passa essa data por `ciclo_caixa()` — ou seja, um recorrente
-  pago no crédito também desloca de ciclo, igual a uma compra avulsa. A janela
-  de geração usa uma folga de 2 meses sobre `horizonte_meses` porque o crédito
-  pode empurrar a ocorrência para o ciclo seguinte; um filtro final corta de
-  volta exatamente no horizonte configurado.
+- **`v_recorrentes_ciclo`** gera a **sequência de ciclos** diretamente
+  (`generate_series` sobre o próprio ciclo de início até o horizonte
+  configurado) — não uma data de calendário por mês que depois vira ciclo.
+  `dia_referencia` é só metadado informativo, não entra no cálculo de a
+  qual ciclo cada ocorrência pertence.
+
+> **Nota histórica (bug de produção, não reintroduzir):** a primeira versão
+> gerava uma data de calendário por mês a partir de `dia_referencia`
+> (clampada ao fim do mês) e só depois calculava o ciclo dessa data via
+> `ciclo_caixa()`. Isso parecia correto e passou despercebido até o app ser
+> usado com dados reais: para um recorrente com `dia_referencia` perto do
+> dia de recebimento (ex.: salário, dia 29), o "dia 29 fixo" às vezes cai
+> antes do limiar de `data_recebimento()` daquele mês e às vezes depois --
+> porque esse limiar se desloca ±2 dias por causa do ajuste de fim de
+> semana (seção 4), não porque o dia do salário mudou. O resultado: o
+> salário duplicava em alguns ciclos e sumia por completo em outros,
+> produzindo uma "Previsão do horizonte" que alternava entre valores muito
+> altos e muito baixos, mês sim, mês não. Corrigido gerando a sequência de
+> ciclos diretamente, que é sempre consecutiva e não tem essa ambiguidade.
 - **`v_fluxo`** trata parcelamentos e avulsos como sempre `'pago'`: ao
   contrário dos recorrentes, eles não passam por confirmação por ciclo — são
   lançados quando o fato já ocorreu (a compra foi feita, o parcelamento foi
