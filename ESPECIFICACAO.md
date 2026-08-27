@@ -398,8 +398,9 @@ usuários, anexos, integração bancária.
 > **Nota histórica (bugs de implementação — não reintroduzir):** o fluxo de
 > MFA só existe porque o app foi testado de ponta a ponta num navegador de
 > verdade (enroll real + código TOTP válido gerado a partir do segredo +
-> desafio no login), não só por inspeção de código. Dois bugs reais só
-> apareceram assim:
+> desafio no login), não só por inspeção de código — e depois testado de novo
+> contra o projeto Supabase Cloud real, o que revelou um terceiro bug que o
+> ambiente local não expôs. Três bugs reais só apareceram assim:
 >
 > 1. **O formulário de desafio de MFA ficava visível na tela de login antes
 >    da hora.** Causa: a regra `.form { display: flex }` do CSS do app tem a
@@ -415,6 +416,19 @@ usuários, anexos, integração bancária.
 >    faz o navegador tratar o prefixo da URI como texto solto antes da tag
 >    `<svg>`. Corrigido usando `<img src="{qr_code}">` em vez de injetar o
 >    valor direto no HTML.
+> 3. **Contra o projeto Supabase Cloud (não contra o local), o `<img
+>    src="{qr_code}">` do item 2 quebrava de novo** — ícone de imagem
+>    quebrada e o final do template (`" alt="QR code do autenticador">`)
+>    vazando como texto na tela. Causa: a versão do GoTrue em produção
+>    aparentemente gera o data URI do SVG com aspas literais não
+>    escapadas, que fecham o atributo `src="..."` no meio da string quando
+>    ela é interpolada como texto de HTML — um problema de version skew
+>    entre o Auth local e o cloud que não aparece testando só localmente.
+>    Corrigido atribuindo `img.src = qr_code` via propriedade do DOM em vez
+>    de interpolar no template — isso nunca precisa de escape, então é
+>    seguro para qualquer formato que o Auth devolva. Também foi
+>    acrescentado um campo com a chave TOTP em texto, para digitação manual
+>    quando a câmera não conseguir ler o QR.
 
 ---
 
@@ -488,7 +502,9 @@ Origem: planilha com as abas `Lançamentos`, `Lançamentos Diversos`,
 Fases 0–5 completas: schema, funções de calendário, RLS, views, e front-end
 PWA testado ponta a ponta num navegador real (login, configuração,
 categorias, lançamento rápido, parcelamento com projeção, ciclo atual,
-resumo, e o fluxo completo de MFA). Fases 6 (deploy), 7 (Power BI) e 8
-(migração de dados históricos) dependem de contas e ações que só o usuário
-pode fazer (Supabase Cloud, GitHub, exportar a planilha) e ainda não foram
-executadas.
+resumo, e o fluxo completo de MFA). Fase 6 em andamento: projeto criado no
+Supabase Cloud (`Finances-DB`, região `sa-east-1`), `supabase link` e
+`supabase db push` feitos, e a verificação manual de RLS com a chave `anon`
+repetida contra o banco cloud (zero linhas, igual ao local). Falta o deploy
+do front-end no GitHub Pages e a Action anti-pausa. Fase 7 (Power BI) e
+fase 8 (migração de dados históricos) ainda não começaram.

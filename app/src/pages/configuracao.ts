@@ -168,6 +168,20 @@ function wireMfaEnroll(page: HTMLElement): void {
   const area = page.querySelector<HTMLDivElement>('#mfa-enroll-area')!;
 
   btn.addEventListener('click', async () => {
+    area.innerHTML = `<p>Gerando QR code...</p>`;
+
+    // Uma tentativa anterior que gerou QR mas nao foi confirmada deixa um
+    // fator "unverified" pendente. Como o enroll nao recebe friendlyName, uma
+    // nova tentativa colide com esse fator preso ("A factor with the friendly
+    // name already exists"). Limpa qualquer fator TOTP nao verificado antes
+    // de gerar um QR novo, para que tentar de novo sempre funcione.
+    const { data: existentes } = await supabase.auth.mfa.listFactors();
+    for (const fator of existentes?.all ?? []) {
+      if (fator.factor_type === 'totp' && fator.status === 'unverified') {
+        await supabase.auth.mfa.unenroll({ factorId: fator.id });
+      }
+    }
+
     const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
 
     if (error || !data) {
@@ -176,13 +190,21 @@ function wireMfaEnroll(page: HTMLElement): void {
     }
 
     area.innerHTML = `
-      <div class="qr-mfa"><img src="${data.totp.qr_code}" alt="QR code do autenticador"></div>
+      <div class="qr-mfa"><img id="mfa-qr-img" alt="QR code do autenticador"></div>
+      <p class="msg">Nao conseguiu escanear? Digite esta chave manualmente no app
+        autenticador: <code id="mfa-secret"></code></p>
       <form id="form-mfa-verify" class="form">
         <label>Codigo do autenticador<input type="text" name="codigo" inputmode="numeric" required></label>
         <button type="submit">Confirmar</button>
         <p class="msg" id="msg-mfa" hidden></p>
       </form>
     `;
+
+    // Atribuido via propriedade do DOM, nunca interpolado dentro do HTML: o
+    // data URI do SVG traz aspas literais, que quebrariam o atributo
+    // src="..." se fosse inserido direto no template (bug ja visto em teste).
+    (area.querySelector('#mfa-qr-img') as HTMLImageElement).src = data.totp.qr_code;
+    area.querySelector('#mfa-secret')!.textContent = data.totp.secret;
 
     const verifyForm = area.querySelector<HTMLFormElement>('#form-mfa-verify')!;
     const msgMfa = area.querySelector<HTMLParagraphElement>('#msg-mfa')!;
