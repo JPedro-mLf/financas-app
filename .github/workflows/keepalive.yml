@@ -1,0 +1,21 @@
+name: Supabase keepalive
+
+# Supabase Free pausa o projeto apos 1 semana sem atividade (ESPECIFICACAO.md
+# secao 3). Essa consulta leve, todo dia, mantem o projeto ativo -- o `anon`
+# nao ve nenhuma linha (RLS), mas isso ja conta como atividade no banco.
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          curl -sf -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/categorias?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -o /dev/null

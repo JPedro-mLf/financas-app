@@ -1,7 +1,10 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+// GitHub Pages serve o projeto num subcaminho (https://<usuario>.github.io/financas-app/),
+// entao o build precisa desse base -- mas o dev server local continua na raiz.
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/financas-app/' : '/',
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
@@ -14,9 +17,9 @@ export default defineConfig({
         background_color: '#0f1115',
         theme_color: '#0f1115',
         icons: [
-          { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
     }),
   ],
-});
+}));
