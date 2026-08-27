@@ -348,7 +348,14 @@ Decisões de design tomadas na implementação:
 - **`v_previsao`** ancora a projeção na linha mais recente de `saldos` por
   usuário. Sem nenhuma conciliação registrada não há ponto de partida — o
   usuário simplesmente não aparece na view até registrar o primeiro saldo
-  apurado em Configuração.
+  apurado em Configuração. `valor_apurado` representa o saldo real **no
+  início do ciclo** ao qual está associado (mesmo conceito de "SALDO NO
+  PRIMEIRO DIA DO MÊS (DIA DE RECEBIMENTO)" que já existia na aba Dashboard
+  da planilha antiga) -- a projeção soma o saldo previsto de cada ciclo
+  futuro em cima desse ponto de partida, começando do ciclo seguinte ao
+  registrado. Na pratica, para o primeiro cadastro, usar o saldo real do dia
+  já é uma aproximação razoável; ela só fica exata a partir do próximo ciclo,
+  quando a conciliação for atualizada de novo logo apos o salário cair.
 
 ---
 
@@ -390,10 +397,20 @@ PWA instalável na tela inicial. Prioridade absoluta: **velocidade de lançament
    e campo para valor realizado (usado nos itens `estimado`).
 5. **Resumo** — saldo do ciclo, previsto vs. realizado, previsão do horizonte,
    alerta de saldo negativo.
-6. **Configuração** — parâmetros do ciclo, categorias, descontos em folha.
+6. **Configuração** — parâmetros do ciclo, categorias, descontos em folha,
+   saldo apurado (conciliação usada pela previsão do horizonte).
 
 Fora do escopo da v1: gráficos elaborados (é papel do Power BI), múltiplos
-usuários, anexos, integração bancária.
+usuários, anexos, integração bancária. Também fora do v1: tela de edição de
+recorrentes/parcelamentos já cadastrados (por enquanto, ajustes desse tipo
+são feitos direto no Table Editor do Supabase Studio).
+
+> **Nota histórica (lacuna encontrada em uso real):** a lista original desta
+> seção não previa nenhuma tela para a tabela `saldos` -- só ao usar o app de
+> verdade ficou claro que a tela Resumo já instruía "registre um saldo
+> apurado em Configuração para começar a projetar" sem que essa ação
+> existisse em lugar nenhum. Corrigido acrescentando a seção "Saldo apurado"
+> em Configuração (item 6 acima).
 
 > **Nota histórica (bugs de implementação — não reintroduzir):** o fluxo de
 > MFA só existe porque o app foi testado de ponta a ponta num navegador de
