@@ -12,8 +12,10 @@ app/.env.*
 supabase/.branches
 supabase/.temp
 
-# Migracao
-migracao/dados/*.csv
+# Migracao -- fora do git inteira: os scripts tem descricoes reais da
+# planilha (nomes de compras, de quem dividiu conta, etc.) e o repo e
+# publico. So existe no disco local, nao precisa ser versionada.
+migracao/
 
 # Editor / SO
 .vscode/*
