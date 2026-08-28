@@ -149,6 +149,22 @@ button:disabled {
   min-width: 6rem;
 }
 
+.nav-mes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.nav-mes h1 {
+  margin: 0;
+}
+
+.nav-mes button {
+  padding: 0.4rem 0.9rem;
+  font-size: 1.1rem;
+}
+
 .tabbar {
   position: sticky;
   bottom: 0;

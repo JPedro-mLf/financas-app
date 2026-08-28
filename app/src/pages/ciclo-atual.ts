@@ -38,11 +38,11 @@ export async function renderCicloAtual(page: HTMLElement): Promise<void> {
             ${(linhas as LinhaCiclo[]).map((l) => `
               <li data-id="${l.origem_id}">
                 <div class="linha-topo">
-                  <span>${l.descricao}</span>
+                  <span>${l.descricao}${l.estimado ? ' <small>(estimado)</small>' : ''}</span>
                   <span>${formatBRL(l.valor)}</span>
                 </div>
                 <div class="linha-controles">
-                  ${l.estimado ? `<input type="number" step="0.01" class="valor-realizado" placeholder="Valor real">` : ''}
+                  <input type="number" step="0.01" class="valor-realizado" placeholder="Valor real" value="${l.valor}">
                   <select class="status">
                     <option value="previsto" ${l.status === 'previsto' ? 'selected' : ''}>Previsto</option>
                     <option value="pendente" ${l.status === 'pendente' ? 'selected' : ''}>Pendente</option>
