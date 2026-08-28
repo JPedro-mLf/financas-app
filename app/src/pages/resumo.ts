@@ -13,6 +13,12 @@ type ResumoCiclo = {
 
 type PrevisaoLinha = { ciclo: string; saldo_projetado: number };
 
+function deslocarMeses(ciclo: string, meses: number): string {
+  const d = new Date(`${ciclo}T00:00:00`);
+  d.setMonth(d.getMonth() + meses);
+  return d.toISOString().slice(0, 10);
+}
+
 export async function renderResumo(page: HTMLElement): Promise<void> {
   page.innerHTML = `<p>Carregando resumo...</p>`;
 
@@ -22,24 +28,22 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
     return;
   }
 
-  const [resumoRes, previsaoRes, alertasRes] = await Promise.all([
-    supabase.from('v_resumo_ciclo').select('*').eq('ciclo', cicloAtual).maybeSingle(),
+  // Previsao e alertas sao a projecao a partir do ultimo saldo apurado --
+  // nao mudam com a navegacao entre meses, so o card do ciclo abaixo muda.
+  const [previsaoRes, alertasRes] = await Promise.all([
     supabase.from('v_previsao').select('ciclo, saldo_projetado').order('ciclo'),
     supabase.from('v_alertas').select('ciclo, saldo_projetado').order('ciclo'),
   ]);
 
-  if (resumoRes.error || previsaoRes.error || alertasRes.error) {
+  if (previsaoRes.error || alertasRes.error) {
     page.innerHTML = `<p class="msg erro">Erro ao carregar o resumo.</p>`;
     return;
   }
 
-  const resumo = resumoRes.data as ResumoCiclo | null;
   const previsao = (previsaoRes.data ?? []) as PrevisaoLinha[];
   const alertas = (alertasRes.data ?? []) as PrevisaoLinha[];
 
-  page.innerHTML = `
-    <h1>Resumo — ${rotuloCiclo(cicloAtual)}</h1>
-
+  const painelFixo = `
     ${
       alertas.length > 0
         ? `<div class="alerta">
@@ -47,15 +51,6 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
           </div>`
         : ''
     }
-
-    <section class="cartao">
-      <p>Receitas: ${formatBRL(resumo?.receitas)}</p>
-      <p>Despesas: ${formatBRL(resumo?.despesas)}</p>
-      <p><strong>Saldo do ciclo: ${formatBRL(resumo?.saldo)}</strong></p>
-      <p>Realizado: ${formatBRL((resumo?.receitas_realizadas ?? 0) - (resumo?.despesas_realizadas ?? 0))}</p>
-      <p>Previsto: ${formatBRL((resumo?.receitas_previstas ?? 0) - (resumo?.despesas_previstas ?? 0))}</p>
-    </section>
-
     <h2>Previsao do horizonte</h2>
     ${
       previsao.length === 0
@@ -63,4 +58,45 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
         : `<ul>${previsao.map((p) => `<li>${rotuloCiclo(p.ciclo)}: ${formatBRL(p.saldo_projetado)}</li>`).join('')}</ul>`
     }
   `;
+
+  await renderCiclo(page, cicloAtual, cicloAtual, painelFixo);
+}
+
+async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string, painelFixo: string): Promise<void> {
+  page.innerHTML = `<p>Carregando resumo...</p>`;
+
+  const { data: resumo, error } = await supabase.from('v_resumo_ciclo').select('*').eq('ciclo', ciclo).maybeSingle();
+
+  if (error) {
+    page.innerHTML = `<p class="msg erro">Erro ao carregar o resumo.</p>`;
+    return;
+  }
+
+  const resumoTipado = resumo as ResumoCiclo | null;
+
+  page.innerHTML = `
+    <div class="nav-mes">
+      <button type="button" id="btn-mes-anterior">&lsaquo;</button>
+      <h1>Resumo — ${rotuloCiclo(ciclo)}</h1>
+      <button type="button" id="btn-mes-seguinte">&rsaquo;</button>
+    </div>
+    ${ciclo === cicloAtual ? '' : '<p class="msg">Ciclo atual: ' + rotuloCiclo(cicloAtual) + '</p>'}
+
+    <section class="cartao">
+      <p>Receitas: ${formatBRL(resumoTipado?.receitas)}</p>
+      <p>Despesas: ${formatBRL(resumoTipado?.despesas)}</p>
+      <p><strong>Saldo do ciclo: ${formatBRL(resumoTipado?.saldo)}</strong></p>
+      <p>Realizado: ${formatBRL((resumoTipado?.receitas_realizadas ?? 0) - (resumoTipado?.despesas_realizadas ?? 0))}</p>
+      <p>Previsto: ${formatBRL((resumoTipado?.receitas_previstas ?? 0) - (resumoTipado?.despesas_previstas ?? 0))}</p>
+    </section>
+
+    ${painelFixo}
+  `;
+
+  page.querySelector('#btn-mes-anterior')!.addEventListener('click', () => {
+    void renderCiclo(page, deslocarMeses(ciclo, -1), cicloAtual, painelFixo);
+  });
+  page.querySelector('#btn-mes-seguinte')!.addEventListener('click', () => {
+    void renderCiclo(page, deslocarMeses(ciclo, 1), cicloAtual, painelFixo);
+  });
 }
