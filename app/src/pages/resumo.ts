@@ -12,6 +12,7 @@ type ResumoCiclo = {
 };
 
 type PrevisaoLinha = { ciclo: string; saldo_projetado: number };
+type ReservaLinha = { descricao: string; reserva_acumulada: number };
 
 function deslocarMeses(ciclo: string, meses: number): string {
   const d = new Date(`${ciclo}T00:00:00`);
@@ -28,20 +29,24 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
     return;
   }
 
-  // Previsao e alertas sao a projecao a partir do ultimo saldo apurado --
-  // nao mudam com a navegacao entre meses, so o card do ciclo abaixo muda.
-  const [previsaoRes, alertasRes] = await Promise.all([
+  // Previsao, alertas e reservas nao mudam com a navegacao entre meses --
+  // sao projecoes/acumulados a partir do historico inteiro, nao do ciclo
+  // que esta sendo visualizado. So o card do ciclo (e o saldo acumulado
+  // dentro dele) mudam.
+  const [previsaoRes, alertasRes, reservasRes] = await Promise.all([
     supabase.from('v_previsao').select('ciclo, saldo_projetado').order('ciclo'),
     supabase.from('v_alertas').select('ciclo, saldo_projetado').order('ciclo'),
+    supabase.from('v_reserva_estimados').select('descricao, reserva_acumulada').order('descricao'),
   ]);
 
-  if (previsaoRes.error || alertasRes.error) {
+  if (previsaoRes.error || alertasRes.error || reservasRes.error) {
     page.innerHTML = `<p class="msg erro">Erro ao carregar o resumo.</p>`;
     return;
   }
 
   const previsao = (previsaoRes.data ?? []) as PrevisaoLinha[];
   const alertas = (alertasRes.data ?? []) as PrevisaoLinha[];
+  const reservas = (reservasRes.data ?? []) as ReservaLinha[];
 
   const painelFixo = `
     ${
@@ -57,6 +62,15 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
         ? '<p>Sem previsao ainda -- registre um saldo apurado em Configuracao para comecar a projetar.</p>'
         : `<ul>${previsao.map((p) => `<li>${rotuloCiclo(p.ciclo)}: ${formatBRL(p.saldo_projetado)}</li>`).join('')}</ul>`
     }
+
+    ${
+      reservas.length > 0
+        ? `<h2>Reservas dos itens estimados</h2>
+           <p class="msg">Diferenca acumulada entre o previsto e o realizado nos ciclos ja
+             confirmados -- gastou menos que o provisionado, guarda; gastou mais, consome.</p>
+           <ul>${reservas.map((r) => `<li>${r.descricao}: ${formatBRL(r.reserva_acumulada)}</li>`).join('')}</ul>`
+        : ''
+    }
   `;
 
   await renderCiclo(page, cicloAtual, cicloAtual, painelFixo);
@@ -65,14 +79,18 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
 async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string, painelFixo: string): Promise<void> {
   page.innerHTML = `<p>Carregando resumo...</p>`;
 
-  const { data: resumo, error } = await supabase.from('v_resumo_ciclo').select('*').eq('ciclo', ciclo).maybeSingle();
+  const [resumoRes, acumuladoRes] = await Promise.all([
+    supabase.from('v_resumo_ciclo').select('*').eq('ciclo', ciclo).maybeSingle(),
+    supabase.from('v_saldo_acumulado').select('saldo_acumulado').eq('ciclo', ciclo).maybeSingle(),
+  ]);
 
-  if (error) {
+  if (resumoRes.error || acumuladoRes.error) {
     page.innerHTML = `<p class="msg erro">Erro ao carregar o resumo.</p>`;
     return;
   }
 
-  const resumoTipado = resumo as ResumoCiclo | null;
+  const resumoTipado = resumoRes.data as ResumoCiclo | null;
+  const saldoAcumulado = (acumuladoRes.data as { saldo_acumulado: number } | null)?.saldo_acumulado;
 
   page.innerHTML = `
     <div class="nav-mes">
@@ -85,9 +103,14 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
     <section class="cartao">
       <p>Receitas: ${formatBRL(resumoTipado?.receitas)}</p>
       <p>Despesas: ${formatBRL(resumoTipado?.despesas)}</p>
-      <p><strong>Saldo do ciclo: ${formatBRL(resumoTipado?.saldo)}</strong></p>
+      <p><strong>Saldo do ciclo (so este mes): ${formatBRL(resumoTipado?.saldo)}</strong></p>
       <p>Realizado: ${formatBRL((resumoTipado?.receitas_realizadas ?? 0) - (resumoTipado?.despesas_realizadas ?? 0))}</p>
       <p>Previsto: ${formatBRL((resumoTipado?.receitas_previstas ?? 0) - (resumoTipado?.despesas_previstas ?? 0))}</p>
+      ${
+        saldoAcumulado != null
+          ? `<p class="acumulado"><strong>Saldo acumulado ate aqui: ${formatBRL(saldoAcumulado)}</strong></p>`
+          : '<p class="msg">Sem saldo acumulado -- registre um saldo apurado em Configuracao.</p>'
+      }
     </section>
 
     ${painelFixo}

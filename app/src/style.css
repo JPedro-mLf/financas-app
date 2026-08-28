@@ -99,6 +99,12 @@ button:disabled {
   margin-bottom: 1rem;
 }
 
+.acumulado {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--cor-borda);
+}
+
 .alerta {
   background: color-mix(in srgb, var(--cor-alerta) 15%, transparent);
   border: 1px solid var(--cor-alerta);
