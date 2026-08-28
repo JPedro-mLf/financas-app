@@ -137,6 +137,56 @@ button:disabled {
   margin-bottom: 0.5rem;
 }
 
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--cor-acento);
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 1rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.lista-resumida {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lista-resumida li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.lista-resumida li > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.valor-receita { color: var(--cor-sucesso); }
+.valor-despesa { color: var(--cor-texto); }
+
+.status-badge {
+  font-size: 0.75rem;
+  color: var(--cor-texto-fraco);
+  border: 1px solid var(--cor-borda);
+  border-radius: 1rem;
+  padding: 0.1rem 0.5rem;
+  white-space: nowrap;
+}
+
+.status-badge.status-pago { color: var(--cor-sucesso); }
+.status-badge.status-cancelado { color: var(--cor-erro); }
+
 .linha-controles {
   display: flex;
   gap: 0.5rem;
