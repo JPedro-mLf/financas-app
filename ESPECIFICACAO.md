@@ -327,8 +327,10 @@ em aberto; o design abaixo é o que foi construído e testado):
 | `v_avulsos` | Normaliza avulsos para o formato comum |
 | `v_fluxo` | `union all` das três acima — a tabela-fato que o Power BI consome |
 | `v_resumo_ciclo` | Receitas, despesas, saldo do ciclo, previsto vs. realizado |
-| `v_previsao` | Saldo acumulado projetado ao longo de `horizonte_meses` |
+| `v_previsao` | Saldo acumulado projetado ao longo de `horizonte_meses`, só pra frente |
 | `v_alertas` | Sinaliza saldo negativo previsto dentro do horizonte |
+| `v_saldo_acumulado` | Saldo acumulado até qualquer ciclo (passado, atual ou futuro), ancorado no último saldo apurado |
+| `v_reserva_estimados` | Reserva acumulada dos itens `estimado`: soma de previsto − realizado nos ciclos já confirmados |
 
 Decisões de design tomadas na implementação:
 
@@ -368,6 +370,20 @@ Decisões de design tomadas na implementação:
   registrado. Na pratica, para o primeiro cadastro, usar o saldo real do dia
   já é uma aproximação razoável; ela só fica exata a partir do próximo ciclo,
   quando a conciliação for atualizada de novo logo apos o salário cair.
+- **`v_saldo_acumulado`** generaliza `v_previsao` para qualquer ciclo, não só
+  os futuros dentro do horizonte: útil para o Resumo, que deixa navegar para
+  meses passados e quer mostrar "quanto eu teria acumulado até aqui", não só
+  o saldo isolado daquele mês. A fórmula usa uma única soma-prefixo (`sum(saldo)
+  over (order by ciclo)`, sempre crescente) e subtrai o prefixo no ciclo-âncora
+  do prefixo no ciclo-alvo -- funciona para ciclos antes ou depois da âncora
+  sem precisar de dois ramos de cálculo com sinal invertido.
+- **`v_reserva_estimados`** responde a uma pergunta que surgiu em uso real:
+  quando um item `estimado` (combustível, manutenção) custa menos que o
+  provisionado num mês, essa diferença "some" ou fica guardada em algum
+  lugar? A view acumula previsto − realizado por item, somando só os ciclos
+  com `execucoes.status = 'pago'` (ciclos ainda não confirmados não contam --
+  a reserva só reflete o que o usuário efetivamente registrou). Gastar menos
+  que o provisionado aumenta a reserva; gastar mais a consome.
 
 ---
 
@@ -406,16 +422,37 @@ PWA instalável na tela inicial. Prioridade absoluta: **velocidade de lançament
 3. **Novo parcelamento** — descrição, categoria, meio, data da compra, valor da
    parcela, quantidade. Mostra a projeção antes de salvar.
 4. **Ciclo atual** — lista de recorrentes do ciclo com alternância pendente/pago
-   e campo para valor realizado (usado nos itens `estimado`).
-5. **Resumo** — saldo do ciclo, previsto vs. realizado, previsão do horizonte,
-   alerta de saldo negativo.
-6. **Configuração** — parâmetros do ciclo, categorias, descontos em folha,
+   e campo para valor realizado, em qualquer recorrente (não só nos itens
+   `estimado` -- ver nota histórica abaixo).
+5. **Extrato** — navega mês a mês (atual e passado) por todas as transações
+   do ciclo (`v_fluxo`). Dois modos: detalhado (edita valor de avulsos e
+   recorrentes, exclui avulsos) e resumido (só descrição, valor e status,
+   sem controles, pensado pra consulta rápida tipo extrato bancário).
+   Parcelas de parcelamento aparecem só leitura em ambos os modos -- o valor
+   é da série inteira, não há coluna para sobrescrever uma parcela isolada.
+6. **Resumo** — navega mês a mês como o Extrato. O card do ciclo (receitas,
+   despesas, saldo do próprio mês, saldo acumulado até ali) muda com a
+   navegação; o painel de alertas, previsão do horizonte e reservas dos
+   itens estimados fica fixo, por ser uma projeção a partir do histórico
+   inteiro, não do mês em exibição.
+7. **Configuração** — parâmetros do ciclo, categorias, descontos em folha,
    saldo apurado (conciliação usada pela previsão do horizonte).
 
 Fora do escopo da v1: gráficos elaborados (é papel do Power BI), múltiplos
-usuários, anexos, integração bancária. Também fora do v1: tela de edição de
-recorrentes/parcelamentos já cadastrados (por enquanto, ajustes desse tipo
-são feitos direto no Table Editor do Supabase Studio).
+usuários, anexos, integração bancária. Também fora do v1: editar o
+*cadastro* de um recorrente ou parcelamento (valor previsto, dia de
+referência, categoria, meio de pagamento) -- isso ainda é via Table Editor
+do Supabase Studio. Editar o *valor realizado de um ciclo específico* de um
+recorrente, isso o app já cobre (Ciclo atual e Extrato); e excluir um avulso
+específico também (Extrato).
+
+> **Nota histórica (evolução em uso real):** as telas Ciclo atual e Extrato
+> não nasceram assim. Ciclo atual só deixava editar o valor realizado dos
+> itens `estimado`, e não existia nenhuma forma de olhar meses passados ou
+> excluir um avulso lançado errado -- os dois foram pedidos de uso real,
+> depois de rodar o app no dia a dia com dados de verdade. Extrato reaproveita
+> o mesmo padrão de navegação por mês (setas ‹ ›) que depois também foi
+> aplicado ao Resumo.
 
 > **Nota histórica (lacuna encontrada em uso real):** a lista original desta
 > seção não previa nenhuma tela para a tabela `saldos` -- só ao usar o app de
@@ -590,3 +627,15 @@ Fases 0–6 e 8 completas. Fase 7 (Power BI) é a única que falta.
 - **Fase 8 (migração):** dados históricos da planilha `Controle de Despesas`
   migrados por completo -- ver seção 11 para as decisões e descobertas.
 - **Fase 7 (Power BI):** não iniciada.
+
+### Iterações pós-lançamento (uso real, ainda dentro da v1)
+
+Depois que o app foi ao ar com dados reais, uma rodada de melhorias pedidas
+em uso genuíno: tela Extrato (ver seção 9), navegação por mês também no
+Resumo, `v_saldo_acumulado` e `v_reserva_estimados` (ver seção 7), e liberar
+a edição de valor realizado para qualquer recorrente no Ciclo atual, não só
+os `estimado`. Isso reforça o porquê da seção 10 ordenar "front-end" antes
+de "deploy" mas depois de tudo que é motor de cálculo: boa parte do que
+realmente falta descobrir num app de finanças pessoal só aparece usando ele
+de verdade, com dinheiro de verdade, mês após mês -- não dá pra prever tudo
+sentado na especificação.
