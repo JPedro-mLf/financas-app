@@ -1,6 +1,7 @@
 :root {
   --cor-fundo: #0f1115;
   --cor-superficie: #1a1d24;
+  --cor-superficie-2: #20242d;
   --cor-borda: #2b2f3a;
   --cor-texto: #e8eaed;
   --cor-texto-fraco: #9aa0ab;
@@ -103,6 +104,45 @@ button:disabled {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--cor-borda);
+}
+
+.lista-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.linha-ranking {
+  display: grid;
+  grid-template-columns: 6.2rem 1fr 4.2rem;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.linha-ranking .nome {
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trilha-barra {
+  background: var(--cor-superficie-2);
+  border-radius: 999px;
+  height: 0.55rem;
+  overflow: hidden;
+}
+
+.barra-preenchida {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.linha-ranking .valor {
+  font-size: 0.78rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--cor-texto-fraco);
 }
 
 .alerta {

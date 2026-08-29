@@ -13,6 +13,13 @@ type ResumoCiclo = {
 
 type PrevisaoLinha = { ciclo: string; saldo_projetado: number };
 type ReservaLinha = { descricao: string; reserva_acumulada: number };
+type CategoriaLinha = { categoria_nome: string; total: number };
+
+// Ordem fixa (nao ciclar): paleta categorica validada p/ modo escuro contra
+// a superficie do app (ver ESPECIFICACAO.md -- skill de dataviz).
+const CORES_CATEGORIA = ['#d95926', '#199e70', '#c98500', '#d55181', '#9085e9'];
+const COR_OUTRAS = '#6b7280';
+const MAX_CATEGORIAS_VISIVEIS = 5;
 
 function deslocarMeses(ciclo: string, meses: number): string {
   const d = new Date(`${ciclo}T00:00:00`);
@@ -79,18 +86,25 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
 async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string, painelFixo: string): Promise<void> {
   page.innerHTML = `<p>Carregando resumo...</p>`;
 
-  const [resumoRes, acumuladoRes] = await Promise.all([
+  const [resumoRes, acumuladoRes, categoriasRes] = await Promise.all([
     supabase.from('v_resumo_ciclo').select('*').eq('ciclo', ciclo).maybeSingle(),
     supabase.from('v_saldo_acumulado').select('saldo_acumulado').eq('ciclo', ciclo).maybeSingle(),
+    supabase
+      .from('v_gastos_por_categoria')
+      .select('categoria_nome, total')
+      .eq('ciclo', ciclo)
+      .eq('tipo', 'despesa')
+      .order('total', { ascending: false }),
   ]);
 
-  if (resumoRes.error || acumuladoRes.error) {
+  if (resumoRes.error || acumuladoRes.error || categoriasRes.error) {
     page.innerHTML = `<p class="msg erro">Erro ao carregar o resumo.</p>`;
     return;
   }
 
   const resumoTipado = resumoRes.data as ResumoCiclo | null;
   const saldoAcumulado = (acumuladoRes.data as { saldo_acumulado: number } | null)?.saldo_acumulado;
+  const categorias = (categoriasRes.data ?? []) as CategoriaLinha[];
 
   page.innerHTML = `
     <div class="nav-mes">
@@ -113,6 +127,11 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
       }
     </section>
 
+    <section class="cartao">
+      <h2>Gastos por categoria</h2>
+      ${categorias.length === 0 ? '<p class="msg">Nenhuma despesa neste ciclo.</p>' : renderRankingCategorias(categorias)}
+    </section>
+
     ${painelFixo}
   `;
 
@@ -122,4 +141,29 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
   page.querySelector('#btn-mes-seguinte')!.addEventListener('click', () => {
     void renderCiclo(page, deslocarMeses(ciclo, 1), cicloAtual, painelFixo);
   });
+}
+
+function renderRankingCategorias(categorias: CategoriaLinha[]): string {
+  const visiveis = categorias.slice(0, MAX_CATEGORIAS_VISIVEIS);
+  const resto = categorias.slice(MAX_CATEGORIAS_VISIVEIS);
+  const linhas = [...visiveis];
+  if (resto.length > 0) {
+    linhas.push({ categoria_nome: 'Outras', total: resto.reduce((s, c) => s + c.total, 0) });
+  }
+
+  const max = Math.max(...linhas.map((l) => l.total));
+
+  return `
+    <div class="lista-ranking">
+      ${linhas.map((l, i) => `
+        <div class="linha-ranking">
+          <span class="nome">${l.categoria_nome}</span>
+          <div class="trilha-barra">
+            <div class="barra-preenchida" style="width:${((l.total / max) * 100).toFixed(1)}%; background:${i < CORES_CATEGORIA.length ? CORES_CATEGORIA[i] : COR_OUTRAS}"></div>
+          </div>
+          <span class="valor">${formatBRL(l.total)}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
