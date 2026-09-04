@@ -578,6 +578,48 @@ Decisões e descobertas que só apareceram ao migrar os dados de verdade:
   em `Lançamentos`, e uma compra parcelada que nunca foi cadastrada na aba
   `Parcelamentos` (migrada como avulsos soltos em vez de parcelamento).
 
+#### Remigração v2 (planilha corrigida com meio de pagamento explícito)
+
+Poucos dias depois da primeira migração, o usuário notou lançamentos
+aparecendo no ciclo errado e refez a planilha original acrescentando duas
+colunas que não existiam: tipo (despesa/receita, já existia parcialmente) e
+**meio de pagamento** (pix/crédito/débito/dinheiro/boleto/folha) em cada
+linha de `Lançamentos`/`Lançamentos Diversos`. Isso eliminou de vez a
+inferência por palavra-chave da v1 -- na prática, 0 avulsos e 0 parcelamentos
+precisaram de um valor chutado desta vez (só 1 recorrente inativo, nunca
+usado, sem nenhuma ocorrência histórica para consultar).
+
+- **Parcelamentos e recorrentes ganharam meio de pagamento por voto
+  majoritário**, não mais por palpite de palavra-chave: como essas duas
+  tabelas não têm coluna própria de meio, o script busca as ocorrências reais
+  já casadas em `Lançamentos` (mesma lógica de reconciliação da v1) e usa o
+  meio mais frequente entre elas. Isso corrigiu palpites da v1 que estavam
+  errados -- ex.: "Financiamento Uno" e sua entrada, que a v1 chutou como
+  `debito` (parecia um financiamento bancário), na real são pagos por `pix`.
+- **Nem todo item chamado "Pix" no nome é pago em pix de verdade.** Dois
+  parcelamentos com "Pix" na própria descrição (`Carona BJ-CG-BJ - Pix
+  parcelado`, `Pix Rifa Casamento...`) tiveram `Crédito` como meio
+  majoritário nas ocorrências reais marcadas pelo usuário. O dado real
+  (preenchido com cuidado, linha a linha) prevalece sobre qualquer suposição
+  a partir do texto da descrição.
+- **"Folha de salário normal" votou `pix`, não `folha`** -- a planilha não
+  tinha como o usuário marcar "Folha" nas linhas individuais, só as opções de
+  meio de verdade. Como `folha` e `pix` se comportam identicamente em
+  `ciclo_caixa` (a distinção é só categorização, sem efeito em nenhum
+  cálculo), o script força `folha` só para o recorrente de salário, por ser
+  semanticamente mais correto, sem alterar nenhuma previsão.
+- **`importar.mjs` ganhou um modo `--wipe`**, pedindo a palavra `APAGAR`
+  digitada como confirmação: apaga `execucoes`, `avulsos`, `parcelamentos`,
+  `recorrentes`, `descontos_folha` e `categorias` do usuário autenticado, sem
+  tocar em `config`, `saldos` ou na conta/login/MFA -- necessário para
+  remigrar do zero sem deixar dado antigo e novo misturado.
+- **Bug encontrado no próprio `--wipe`:** a interface de `readline` do
+  terminal era fechada logo depois da senha, antes da pergunta de
+  confirmação `APAGAR` -- que também precisa dela. Resultado: `readline was
+  closed` e o processo Node caía com um assert interno do libuv. Corrigido
+  fechando a interface só depois da última pergunta possível em cada um dos
+  dois caminhos (`--wipe` e importação normal), nunca antes.
+
 ---
 
 ## 12. Fase 2 (não implementar agora)
