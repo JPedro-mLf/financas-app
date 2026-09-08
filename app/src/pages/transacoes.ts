@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import { formatBRL, rotuloCiclo, rotuloMeio, rotuloOrigem, rotuloPeriodo, todayISO } from '../lib/format';
+import { formatBRL, formatData, rotuloCiclo, rotuloMeio, rotuloOrigem, rotuloPeriodo, todayISO } from '../lib/format';
 import { periodoDoCiclo } from '../lib/ciclo';
 
 type LinhaFluxo = {
@@ -11,7 +11,23 @@ type LinhaFluxo = {
   status: 'previsto' | 'pendente' | 'pago' | 'cancelado' | null;
   meio_pagamento: string | null;
   categoria_nome: string | null;
+  data_efetiva: string | null;
+  data_compra: string | null;
+  dia_referencia: number | null;
 };
+
+// Cada origem guarda uma nocao diferente de data (ver a migration
+// 20260908000002). No credito, a data registrada e a da COMPRA, nao a da
+// saida do dinheiro -- ela cai antes do intervalo do ciclo de proposito, que
+// e justamente a regra de competencia da secao 4. Por isso o rotulo muda.
+function rotuloData(l: LinhaFluxo): string {
+  if (l.data_efetiva) {
+    return l.meio_pagamento === 'credito' ? `compra ${formatData(l.data_efetiva)}` : formatData(l.data_efetiva);
+  }
+  if (l.origem === 'parcelamento' && l.data_compra) return `compra ${formatData(l.data_compra)}`;
+  if (l.dia_referencia) return `todo dia ${l.dia_referencia}`;
+  return '';
+}
 
 const ROTULO_STATUS: Record<string, string> = {
   previsto: 'Previsto',
@@ -44,7 +60,9 @@ async function renderCiclo(page: HTMLElement, ciclo: string, resumido: boolean):
   const [{ data: linhas, error }, periodo] = await Promise.all([
     supabase
       .from('v_fluxo')
-      .select('origem_id, origem, descricao, tipo, valor, status, meio_pagamento, categoria_nome')
+      .select(
+        'origem_id, origem, descricao, tipo, valor, status, meio_pagamento, categoria_nome, data_efetiva, data_compra, dia_referencia',
+      )
       .eq('ciclo', ciclo)
       .order('descricao'),
     periodoDoCiclo(ciclo),
@@ -114,7 +132,9 @@ function renderListaDetalhada(linhas: LinhaFluxo[]): string {
             <span>${l.tipo === 'receita' ? '+' : '-'} ${formatBRL(l.valor)}</span>
           </div>
           <p class="linha-meta">
-            ${[l.categoria_nome, rotuloMeio(l.meio_pagamento), rotuloOrigem(l.origem)].filter(Boolean).join(' · ')}
+            ${[rotuloData(l), l.categoria_nome, rotuloMeio(l.meio_pagamento), rotuloOrigem(l.origem)]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
           ${
             l.origem === 'parcelamento'
