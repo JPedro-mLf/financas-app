@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
-import { formatBRL, rotuloCiclo, todayISO } from '../lib/format';
+import { formatBRL, rotuloCiclo, rotuloPeriodo, todayISO } from '../lib/format';
+import { periodoDoCiclo } from '../lib/ciclo';
 
 type LinhaCiclo = {
   origem_id: string;
@@ -18,11 +19,14 @@ export async function renderCicloAtual(page: HTMLElement): Promise<void> {
     return;
   }
 
-  const { data: linhas, error } = await supabase
-    .from('v_recorrentes_ciclo')
-    .select('origem_id, descricao, valor, status, estimado')
-    .eq('ciclo', cicloAtual)
-    .order('descricao');
+  const [{ data: linhas, error }, periodo] = await Promise.all([
+    supabase
+      .from('v_recorrentes_ciclo')
+      .select('origem_id, descricao, valor, status, estimado')
+      .eq('ciclo', cicloAtual)
+      .order('descricao'),
+    periodoDoCiclo(cicloAtual),
+  ]);
 
   if (error) {
     page.innerHTML = `<p class="msg erro">Erro ao carregar o ciclo: ${error.message}</p>`;
@@ -31,6 +35,7 @@ export async function renderCicloAtual(page: HTMLElement): Promise<void> {
 
   page.innerHTML = `
     <h1>Ciclo atual — ${rotuloCiclo(cicloAtual)}</h1>
+    ${periodo ? `<p class="periodo">${rotuloPeriodo(periodo.inicio, periodo.fim)}</p>` : ''}
     ${
       (linhas ?? []).length === 0
         ? '<p>Nenhum recorrente neste ciclo.</p>'

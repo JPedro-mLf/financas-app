@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
-import { formatBRL, rotuloCiclo, todayISO } from '../lib/format';
+import { formatBRL, rotuloCiclo, rotuloPeriodo, todayISO } from '../lib/format';
+import { periodoDoCiclo } from '../lib/ciclo';
 
 type ResumoCiclo = {
   receitas: number;
@@ -86,7 +87,7 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
 async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string, painelFixo: string): Promise<void> {
   page.innerHTML = `<p>Carregando resumo...</p>`;
 
-  const [resumoRes, acumuladoRes, categoriasRes] = await Promise.all([
+  const [resumoRes, acumuladoRes, categoriasRes, periodo] = await Promise.all([
     supabase.from('v_resumo_ciclo').select('*').eq('ciclo', ciclo).maybeSingle(),
     supabase.from('v_saldo_acumulado').select('saldo_acumulado').eq('ciclo', ciclo).maybeSingle(),
     supabase
@@ -95,6 +96,7 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
       .eq('ciclo', ciclo)
       .eq('tipo', 'despesa')
       .order('total', { ascending: false }),
+    periodoDoCiclo(ciclo),
   ]);
 
   if (resumoRes.error || acumuladoRes.error || categoriasRes.error) {
@@ -112,6 +114,7 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
       <h1>Resumo — ${rotuloCiclo(ciclo)}</h1>
       <button type="button" id="btn-mes-seguinte">&rsaquo;</button>
     </div>
+    ${periodo ? `<p class="periodo">${rotuloPeriodo(periodo.inicio, periodo.fim)}</p>` : ''}
     ${ciclo === cicloAtual ? '' : '<p class="msg">Ciclo atual: ' + rotuloCiclo(cicloAtual) + '</p>'}
 
     <section class="cartao">

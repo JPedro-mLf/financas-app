@@ -14,3 +14,37 @@ export function todayISO(): string {
 export function rotuloCiclo(ciclo: string): string {
   return new Date(`${ciclo}T00:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
+
+export function formatData(data: string): string {
+  return new Date(`${data}T00:00:00`).toLocaleDateString('pt-BR');
+}
+
+// "28/08/2026 a 28/09/2026" -- o intervalo de datas que o ciclo cobre.
+export function rotuloPeriodo(inicio: string, fim: string): string {
+  return `${formatData(inicio)} a ${formatData(fim)}`;
+}
+
+const ROTULO_MEIO: Record<string, string> = {
+  pix: 'Pix',
+  credito: 'Crédito',
+  debito: 'Débito',
+  dinheiro: 'Dinheiro',
+  boleto: 'Boleto',
+  folha: 'Folha',
+};
+
+export function rotuloMeio(meio: string | null | undefined): string {
+  if (!meio) return '';
+  return ROTULO_MEIO[meio] ?? meio;
+}
+
+const ROTULO_ORIGEM: Record<string, string> = {
+  avulso: 'Avulso',
+  recorrente: 'Recorrente',
+  parcelamento: 'Parcela',
+};
+
+export function rotuloOrigem(origem: string | null | undefined): string {
+  if (!origem) return '';
+  return ROTULO_ORIGEM[origem] ?? origem;
+}

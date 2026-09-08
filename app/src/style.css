@@ -233,6 +233,32 @@ button:disabled {
 .status-badge.status-pago { color: var(--cor-sucesso); }
 .status-badge.status-cancelado { color: var(--cor-erro); }
 
+/* Intervalo de datas do ciclo, logo abaixo do titulo das telas. */
+.periodo {
+  margin: -0.6rem 0 1rem;
+  font-size: 0.8rem;
+  color: var(--cor-texto-fraco);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-mes + .periodo {
+  text-align: center;
+}
+
+/* Categoria / meio de pagamento / origem, no modo detalhado do Extrato. */
+.linha-meta {
+  margin: -0.25rem 0 0.6rem;
+  font-size: 0.75rem;
+  color: var(--cor-texto-fraco);
+}
+
+/* Meio de pagamento no modo resumido -- compacto, pra caber na linha. */
+.meio-tag {
+  font-size: 0.72rem;
+  color: var(--cor-texto-fraco);
+  white-space: nowrap;
+}
+
 .linha-controles {
   display: flex;
   gap: 0.5rem;

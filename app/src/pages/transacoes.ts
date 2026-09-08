@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
-import { formatBRL, rotuloCiclo, todayISO } from '../lib/format';
+import { formatBRL, rotuloCiclo, rotuloMeio, rotuloOrigem, rotuloPeriodo, todayISO } from '../lib/format';
+import { periodoDoCiclo } from '../lib/ciclo';
 
 type LinhaFluxo = {
   origem_id: string;
@@ -8,6 +9,8 @@ type LinhaFluxo = {
   tipo: 'receita' | 'despesa';
   valor: number;
   status: 'previsto' | 'pendente' | 'pago' | 'cancelado' | null;
+  meio_pagamento: string | null;
+  categoria_nome: string | null;
 };
 
 const ROTULO_STATUS: Record<string, string> = {
@@ -38,11 +41,14 @@ export async function renderTransacoes(page: HTMLElement): Promise<void> {
 async function renderCiclo(page: HTMLElement, ciclo: string, resumido: boolean): Promise<void> {
   page.innerHTML = `<p>Carregando transacoes...</p>`;
 
-  const { data: linhas, error } = await supabase
-    .from('v_fluxo')
-    .select('origem_id, origem, descricao, tipo, valor, status')
-    .eq('ciclo', ciclo)
-    .order('descricao');
+  const [{ data: linhas, error }, periodo] = await Promise.all([
+    supabase
+      .from('v_fluxo')
+      .select('origem_id, origem, descricao, tipo, valor, status, meio_pagamento, categoria_nome')
+      .eq('ciclo', ciclo)
+      .order('descricao'),
+    periodoDoCiclo(ciclo),
+  ]);
 
   if (error) {
     page.innerHTML = `<p class="msg erro">Erro ao carregar transacoes: ${error.message}</p>`;
@@ -57,6 +63,7 @@ async function renderCiclo(page: HTMLElement, ciclo: string, resumido: boolean):
       <h1>${rotuloCiclo(ciclo)}</h1>
       <button type="button" id="btn-mes-seguinte">&rsaquo;</button>
     </div>
+    ${periodo ? `<p class="periodo">${rotuloPeriodo(periodo.inicio, periodo.fim)}</p>` : ''}
     <button type="button" id="btn-alternar-modo" class="btn-link">
       ${resumido ? 'Ver detalhado (editar)' : 'Ver resumido'}
     </button>
@@ -88,6 +95,7 @@ function renderListaResumida(linhas: LinhaFluxo[]): string {
       ${linhas.map((l) => `
         <li>
           <span>${l.descricao}</span>
+          ${l.meio_pagamento ? `<span class="meio-tag">${rotuloMeio(l.meio_pagamento)}</span>` : ''}
           <span class="valor-${l.tipo}">${l.tipo === 'receita' ? '+' : '-'} ${formatBRL(l.valor)}</span>
           ${l.status ? `<span class="status-badge status-${l.status}">${ROTULO_STATUS[l.status]}</span>` : ''}
         </li>
@@ -102,9 +110,12 @@ function renderListaDetalhada(linhas: LinhaFluxo[]): string {
       ${linhas.map((l) => `
         <li data-id="${l.origem_id}" data-origem="${l.origem}">
           <div class="linha-topo">
-            <span>${l.descricao}${l.origem === 'parcelamento' ? ' <small>(parcela)</small>' : ''}</span>
+            <span>${l.descricao}</span>
             <span>${l.tipo === 'receita' ? '+' : '-'} ${formatBRL(l.valor)}</span>
           </div>
+          <p class="linha-meta">
+            ${[l.categoria_nome, rotuloMeio(l.meio_pagamento), rotuloOrigem(l.origem)].filter(Boolean).join(' · ')}
+          </p>
           ${
             l.origem === 'parcelamento'
               ? '<p class="msg">Parcela de um parcelamento -- valor da serie inteira, so leitura. Ajuste em Supabase Studio se precisar.</p>'
