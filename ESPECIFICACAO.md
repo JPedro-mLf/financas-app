@@ -176,6 +176,30 @@ $$;
 > vencimento cai sempre no mês seguinte ao fechamento. Se isso mudar, revisar
 > `fatura_vence`.
 
+### Intervalo de datas de um ciclo (acrescentado em uso real)
+
+As funções acima dizem a qual ciclo uma data pertence, mas não o contrário:
+qual intervalo de datas um ciclo cobre. Isso passou a ser necessário quando o
+app precisou exibir "de quando até quando" vai o mês financeiro em exibição.
+
+```sql
+create or replace function ciclo_inicio(c date)
+returns date language sql immutable as $$
+  select data_recebimento((date_trunc('month', c) - interval '1 month')::date);
+$$;
+
+create or replace function ciclo_fim(c date)
+returns date language sql immutable as $$
+  select data_recebimento(c) - 1;
+$$;
+```
+
+O ciclo rotulado `C` começa no salário que o abriu -- `data_recebimento` do mês
+anterior -- e termina na véspera do próximo recebimento. Conferindo com o
+exemplo da seção 4: o salário de 28/ago/2026 cai no ciclo de setembro, então
+`ciclo_inicio('2026-09-01') = 2026-08-28` e `ciclo_fim('2026-09-01') =
+2026-09-28`. Ciclos consecutivos ficam encostados, sem buraco nem sobreposição.
+
 ---
 
 ## 6. Modelo de dados
@@ -331,8 +355,17 @@ em aberto; o design abaixo é o que foi construído e testado):
 | `v_alertas` | Sinaliza saldo negativo previsto dentro do horizonte |
 | `v_saldo_acumulado` | Saldo acumulado até qualquer ciclo (passado, atual ou futuro), ancorado no último saldo apurado |
 | `v_reserva_estimados` | Reserva acumulada dos itens `estimado`: soma de previsto − realizado nos ciclos já confirmados |
+| `v_gastos_por_categoria` | Total por categoria, por ciclo e por tipo — alimenta o ranking de gastos do Resumo |
 
 Decisões de design tomadas na implementação:
+
+- **Toda view derivada expõe `categoria_nome`, não só `categoria_id`.** Um uuid
+  não diz nada para quem lê a tabela crua — no Table Editor do Supabase, no
+  Power BI, numa consulta SQL avulsa. O nome entra **apenas nas views**: as
+  tabelas base seguem normalizadas, sem coluna de nome duplicada. Duplicar ali
+  seria o mesmo erro que a seção 6 já eliminou ao remover as colunas calculadas
+  da planilha antiga — dado derivado que vira coluna é dado que desatualiza no
+  dia em que a categoria for renomeada.
 
 - **`v_recorrentes_ciclo`** gera a **sequência de ciclos** diretamente
   (`generate_series` sobre o próprio ciclo de início até o horizonte
@@ -426,15 +459,22 @@ PWA instalável na tela inicial. Prioridade absoluta: **velocidade de lançament
    `estimado` -- ver nota histórica abaixo).
 5. **Extrato** — navega mês a mês (atual e passado) por todas as transações
    do ciclo (`v_fluxo`). Dois modos: detalhado (edita valor de avulsos e
-   recorrentes, exclui avulsos) e resumido (só descrição, valor e status,
-   sem controles, pensado pra consulta rápida tipo extrato bancário).
+   recorrentes, exclui avulsos, e mostra categoria · meio de pagamento ·
+   origem em cada linha) e resumido (descrição, meio de pagamento, valor e
+   status, sem controles, pensado pra consulta rápida tipo extrato bancário).
    Parcelas de parcelamento aparecem só leitura em ambos os modos -- o valor
    é da série inteira, não há coluna para sobrescrever uma parcela isolada.
 6. **Resumo** — navega mês a mês como o Extrato. O card do ciclo (receitas,
-   despesas, saldo do próprio mês, saldo acumulado até ali) muda com a
-   navegação; o painel de alertas, previsão do horizonte e reservas dos
-   itens estimados fica fixo, por ser uma projeção a partir do histórico
-   inteiro, não do mês em exibição.
+   despesas, saldo do próprio mês, saldo acumulado até ali) e o ranking de
+   gastos por categoria mudam com a navegação; o painel de alertas, previsão
+   do horizonte e reservas dos itens estimados fica fixo, por ser uma projeção
+   a partir do histórico inteiro, não do mês em exibição.
+
+As telas Ciclo, Extrato e Resumo mostram, abaixo do título, o **intervalo de
+datas do ciclo** em exibição (ex.: "28/08/2026 a 28/09/2026"), vindo de
+`ciclo_inicio`/`ciclo_fim` (seção 5). Sem isso, o rótulo "setembro de 2026"
+sozinho é ambíguo -- o mês financeiro não coincide com o mês do calendário, e
+essa é justamente a regra que mais confunde na hora de conferir um lançamento.
 7. **Configuração** — parâmetros do ciclo, categorias, descontos em folha,
    saldo apurado (conciliação usada pela previsão do horizonte).
 
