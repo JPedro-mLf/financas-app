@@ -119,10 +119,12 @@ function renderListaResumida(linhas: LinhaFluxo[]): string {
     <ul class="lista-resumida">
       ${linhas.map((l) => `
         <li>
-          <span>${l.descricao}</span>
-          ${l.meio_pagamento ? `<span class="meio-tag">${rotuloMeio(l.meio_pagamento)}</span>` : ''}
-          <span class="valor-${l.tipo}">${l.tipo === 'receita' ? '+' : '-'} ${formatBRL(l.valor)}</span>
-          ${l.status ? `<span class="status-badge status-${l.status}">${ROTULO_STATUS[l.status]}</span>` : ''}
+          <span class="resumo-descricao">${l.descricao}</span>
+          <div class="resumo-detalhes">
+            <span class="meio-tag">${l.meio_pagamento ? rotuloMeio(l.meio_pagamento) : ''}</span>
+            <span class="valor-${l.tipo}">${l.tipo === 'receita' ? '+' : '-'} ${formatBRL(l.valor)}</span>
+            ${l.status ? `<span class="status-badge status-${l.status}">${ROTULO_STATUS[l.status]}</span>` : ''}
+          </div>
         </li>
       `).join('')}
     </ul>

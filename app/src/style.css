@@ -202,20 +202,27 @@ button:disabled {
   flex-direction: column;
 }
 
+/* Duas linhas: descricao inteira em cima; meio, valor e status embaixo. */
 .lista-resumida li {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.3rem;
   padding: 0.6rem 0;
   border-bottom: 1px solid var(--cor-borda);
 }
 
-.lista-resumida li > span:first-child {
+.resumo-descricao {
+  overflow-wrap: anywhere;
+}
+
+.resumo-detalhes {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.resumo-detalhes .meio-tag {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .valor-receita { color: var(--cor-sucesso); }
