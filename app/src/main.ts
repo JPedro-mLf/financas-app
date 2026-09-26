@@ -1,4 +1,5 @@
 import './style.css';
+import { registerSW } from 'virtual:pwa-register';
 import { supabase } from './lib/supabaseClient';
 import { navigate, registerRoute, startRouter } from './router';
 import { renderLogin } from './pages/login';
@@ -54,4 +55,18 @@ supabase.auth.onAuthStateChange((_event, session) => {
   if (!session && window.location.hash !== '#/login') {
     navigate('/login');
   }
+});
+
+// App instalado no celular fica vivo em segundo plano e nunca recarrega, entao
+// nao veria deploys novos. Procura atualizacao sempre que volta a ficar
+// visivel; com registerType 'autoUpdate', o registerSW recarrega a pagina
+// sozinho quando o service worker novo assume.
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registro) {
+    if (!registro) return;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void registro.update();
+    });
+  },
 });
