@@ -14,6 +14,7 @@ type LinhaFluxo = {
   data_efetiva: string | null;
   data_compra: string | null;
   dia_referencia: number | null;
+  fatura_vencimento: string | null;
 };
 
 // Cada origem guarda uma nocao diferente de data (ver a migration
@@ -27,6 +28,12 @@ function rotuloData(l: LinhaFluxo): string {
   if (l.origem === 'parcelamento' && l.data_compra) return `compra ${formatData(l.data_compra)}`;
   if (l.dia_referencia) return `todo dia ${l.dia_referencia}`;
   return '';
+}
+
+// Explica por que uma compra no credito esta neste ciclo: ela entra no ciclo
+// em que a fatura vence, nao no da compra (vem de v_fluxo.fatura_vencimento).
+function rotuloFatura(l: LinhaFluxo): string {
+  return l.fatura_vencimento ? `fatura vence ${formatData(l.fatura_vencimento)}` : '';
 }
 
 const ROTULO_STATUS: Record<string, string> = {
@@ -61,7 +68,7 @@ async function renderCiclo(page: HTMLElement, ciclo: string, resumido: boolean):
     supabase
       .from('v_fluxo')
       .select(
-        'origem_id, origem, descricao, tipo, valor, status, meio_pagamento, categoria_nome, data_efetiva, data_compra, dia_referencia',
+        'origem_id, origem, descricao, tipo, valor, status, meio_pagamento, categoria_nome, data_efetiva, data_compra, dia_referencia, fatura_vencimento',
       )
       .eq('ciclo', ciclo)
       .order('descricao'),
@@ -126,13 +133,13 @@ function renderListaDetalhada(linhas: LinhaFluxo[]): string {
   return `
     <ul class="lista-ciclo">
       ${linhas.map((l) => `
-        <li data-id="${l.origem_id}" data-origem="${l.origem}">
+        <li data-id="${l.origem_id}" data-origem="${l.origem}" data-meio="${l.meio_pagamento ?? ''}" data-data="${l.data_efetiva ?? ''}">
           <div class="linha-topo">
             <span>${l.descricao}</span>
             <span>${l.tipo === 'receita' ? '+' : '-'} ${formatBRL(l.valor)}</span>
           </div>
           <p class="linha-meta">
-            ${[rotuloData(l), l.categoria_nome, rotuloMeio(l.meio_pagamento), rotuloOrigem(l.origem)]
+            ${[rotuloData(l), rotuloFatura(l), l.categoria_nome, rotuloMeio(l.meio_pagamento), rotuloOrigem(l.origem)]
               .filter(Boolean)
               .join(' · ')}
           </p>
@@ -140,7 +147,12 @@ function renderListaDetalhada(linhas: LinhaFluxo[]): string {
             l.origem === 'parcelamento'
               ? '<p class="msg">Parcela de um parcelamento -- valor da serie inteira, so leitura. Ajuste em Supabase Studio se precisar.</p>'
               : `<div class="linha-controles">
-                  <input type="number" step="0.01" class="valor-editar" value="${l.valor}">
+                  <input type="number" step="0.01" class="valor-editar" value="${l.valor}" aria-label="Valor">
+                  ${
+                    l.origem === 'avulso'
+                      ? `<input type="date" class="data-editar" value="${l.data_efetiva ?? ''}" aria-label="Data da compra" required>`
+                      : ''
+                  }
                   ${
                     l.origem === 'recorrente'
                       ? `<select class="status-editar">
@@ -176,10 +188,34 @@ function wireEdicao(page: HTMLElement, ciclo: string): void {
     btnSalvar.addEventListener('click', async () => {
       const novoValor = Number(valorInput.value);
       let saveError: string | undefined;
+      let avisoCiclo = '';
 
       if (origem === 'avulso') {
-        const { error: updateError } = await supabase.from('avulsos').update({ valor: novoValor }).eq('id', origemId);
+        const dataInput = li.querySelector<HTMLInputElement>('.data-editar')!;
+        const novaData = dataInput.value;
+        if (!novaData) {
+          msg.hidden = false;
+          msg.textContent = 'Informe a data da compra.';
+          msg.className = 'msg erro msg-linha';
+          return;
+        }
+        const { error: updateError } = await supabase
+          .from('avulsos')
+          .update({ valor: novoValor, data: novaData })
+          .eq('id', origemId);
         saveError = updateError?.message;
+
+        // Mudar a data pode mudar o ciclo (principalmente no credito, por causa
+        // da fatura). Quem decide o ciclo e o banco -- so perguntamos a ele.
+        if (!saveError && novaData !== li.dataset.data) {
+          li.dataset.data = novaData;
+          const { data: novoCiclo } = await supabase.rpc('ciclo_caixa', { d: novaData, meio: li.dataset.meio });
+          const mudouDeCiclo = Boolean(novoCiclo) && novoCiclo !== ciclo;
+          if (mudouDeCiclo) {
+            avisoCiclo = ` Com a nova data, a compra passou para o ciclo de ${rotuloCiclo(novoCiclo)}.`;
+          }
+          li.classList.toggle('movida', mudouDeCiclo);
+        }
       } else {
         const statusSel = li.querySelector<HTMLSelectElement>('.status-editar')!;
         const status = statusSel.value;
@@ -197,7 +233,7 @@ function wireEdicao(page: HTMLElement, ciclo: string): void {
       }
 
       msg.hidden = false;
-      msg.textContent = saveError ? `Erro: ${saveError}` : 'Salvo.';
+      msg.textContent = saveError ? `Erro: ${saveError}` : `Salvo.${avisoCiclo}`;
       msg.className = saveError ? 'msg erro msg-linha' : 'msg sucesso msg-linha';
     });
 

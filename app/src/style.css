@@ -252,6 +252,12 @@ button:disabled {
   color: var(--cor-texto-fraco);
 }
 
+/* Compra cuja data editada a levou para outro ciclo -- fica esmaecida ate a
+   proxima navegacao, quando some desta lista. */
+.lista-ciclo li.movida {
+  opacity: 0.55;
+}
+
 /* Meio de pagamento no modo resumido -- compacto, pra caber na linha. */
 .meio-tag {
   font-size: 0.72rem;
@@ -269,6 +275,12 @@ button:disabled {
 .linha-controles input {
   flex: 1;
   min-width: 6rem;
+}
+
+/* A data precisa caber inteira (dd/mm/aaaa + icone); sem isso o ano some
+   quando divide a linha com valor e botoes. */
+.linha-controles .data-editar {
+  min-width: 9.5rem;
 }
 
 .nav-mes {

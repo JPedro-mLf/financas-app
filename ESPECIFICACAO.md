@@ -459,24 +459,42 @@ PWA instalável na tela inicial. Prioridade absoluta: **velocidade de lançament
    `estimado` -- ver nota histórica abaixo).
 5. **Extrato** — navega mês a mês (atual e passado) por todas as transações
    do ciclo (`v_fluxo`). Dois modos: detalhado (edita valor de avulsos e
-   recorrentes, exclui avulsos, e mostra categoria · meio de pagamento ·
-   origem em cada linha) e resumido (descrição, meio de pagamento, valor e
-   status, sem controles, pensado pra consulta rápida tipo extrato bancário).
-   Parcelas de parcelamento aparecem só leitura em ambos os modos -- o valor
-   é da série inteira, não há coluna para sobrescrever uma parcela isolada.
+   recorrentes, edita a data e exclui avulsos, e mostra data · vencimento da
+   fatura · categoria · meio de pagamento · origem em cada linha) e resumido
+   (descrição, meio de pagamento, valor e status, sem controles, pensado pra
+   consulta rápida tipo extrato bancário). Parcelas de parcelamento aparecem
+   só leitura em ambos os modos -- o valor é da série inteira, não há coluna
+   para sobrescrever uma parcela isolada.
 6. **Resumo** — navega mês a mês como o Extrato. O card do ciclo (receitas,
    despesas, saldo do próprio mês, saldo acumulado até ali) e o ranking de
    gastos por categoria mudam com a navegação; o painel de alertas, previsão
    do horizonte e reservas dos itens estimados fica fixo, por ser uma projeção
    a partir do histórico inteiro, não do mês em exibição.
+7. **Configuração** — parâmetros do ciclo, categorias, descontos em folha,
+   saldo apurado (conciliação usada pela previsão do horizonte).
 
 As telas Ciclo, Extrato e Resumo mostram, abaixo do título, o **intervalo de
 datas do ciclo** em exibição (ex.: "28/08/2026 a 28/09/2026"), vindo de
 `ciclo_inicio`/`ciclo_fim` (seção 5). Sem isso, o rótulo "setembro de 2026"
 sozinho é ambíguo -- o mês financeiro não coincide com o mês do calendário, e
 essa é justamente a regra que mais confunde na hora de conferir um lançamento.
-7. **Configuração** — parâmetros do ciclo, categorias, descontos em folha,
-   saldo apurado (conciliação usada pela previsão do horizonte).
+
+> **Nota (dúvida recorrente em uso real — não é bug):** o intervalo do ciclo
+> NÃO é o intervalo das compras que aparecem nele. Uma compra no crédito entra
+> no ciclo em que a **fatura vence**, não no da compra (seção 4): no ciclo de
+> setembro (28/08 a 28/09) aparecem as compras no crédito de ~28/07 a 27/08
+> (fatura que vence 03/09), e as feitas no crédito entre 28/08 e 27/09 só
+> aparecem em outubro. Isso pareceu um erro ao usuário ("setembro mostra
+> compras de julho"). Decisão: manter a regra — é ela que faz saldo e
+> previsão baterem com o dinheiro real na conta — e torná-la visível: cada
+> linha no crédito do Extrato detalhado mostra "fatura vence dd/mm/aaaa"
+> (`v_fluxo.fatura_vencimento`, via `fatura_vencimento_no_ciclo`). Uma visão
+> alternativa "por data da compra" foi oferecida e recusada por ora.
+>
+> Editar a data de um avulso pode mudá-lo de ciclo; o banco recalcula
+> (`ciclo_caixa`) e o app avisa para qual ciclo a compra foi. Parcelas e
+> recorrentes não têm data editável: a data da parcela é a da série inteira, e
+> o ciclo do recorrente não depende de data.
 
 Fora do escopo da v1: gráficos elaborados (é papel do Power BI), múltiplos
 usuários, anexos, integração bancária. Também fora do v1: editar o
