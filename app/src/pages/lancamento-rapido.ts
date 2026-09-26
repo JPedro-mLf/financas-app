@@ -54,7 +54,6 @@ export async function renderLancamentoRapido(page: HTMLElement): Promise<void> {
   const tipoPorCategoria = new Map(categorias.map((c: Categoria) => [c.id, c.tipo]));
   const form = page.querySelector<HTMLFormElement>('#form-avulso')!;
   const msg = page.querySelector<HTMLParagraphElement>('#msg')!;
-  const inputData = form.elements.namedItem('data') as HTMLInputElement;
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -78,8 +77,14 @@ export async function renderLancamentoRapido(page: HTMLElement): Promise<void> {
     } else {
       msg.textContent = 'Lancamento salvo.';
       msg.className = 'msg sucesso';
-      form.reset();
-      inputData.value = todayISO();
+      // Lancando varias compras atrasadas em sequencia, categoria, meio e data
+      // costumam se repetir -- entao so limpa o que muda a cada compra. Trocar
+      // de aba ou recarregar remonta o formulario com os padroes.
+      const inputValor = form.elements.namedItem('valor') as HTMLInputElement;
+      const inputDescricao = form.elements.namedItem('descricao') as HTMLInputElement;
+      inputValor.value = '';
+      inputDescricao.value = '';
+      inputValor.focus();
     }
   });
 }
