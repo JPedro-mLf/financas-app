@@ -92,8 +92,9 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
 
     <section class="cartao">
       <h2>Saldo atual</h2>
-      <p>Ponto de partida da previsao (tela Resumo). Digite o saldo que o app do
-        banco mostra hoje, em qualquer dia: a previsao soma so o que ainda nao
+      <p>Ponto de partida da previsao (tela Resumo). Digite hoje, em qualquer dia, a soma do saldo de
+        todas as suas contas (corrente e poupanca, sem os cartoes -- o que voce deve
+        no cartao ja entra pelas faturas): a previsao soma so o que ainda nao
         passou pela conta neste ciclo${cicloAtual ? ` (${rotuloCiclo(cicloAtual)})` : ''}.</p>
       ${ancora ? renderAncora(ancora) : ''}
       <form id="form-saldo" class="form">
