@@ -1383,8 +1383,28 @@ sem erro. Acréscimos e correções:
   `clientId` e reler o recurso pela API antes de agir. Na troca de segredo,
   responder `503` (que é reenviado), não `401`.
 - **Sinal dos valores:** no cartão (`CREDIT`), valor **positivo** é compra e
-  negativo é pagamento/estorno; na conta (`BANK`), negativo é saída. A
-  ingestão normaliza por `tipo_conta` antes de preencher `sentido`.
+  negativo é pagamento/estorno; na conta (`BANK`), negativo é saída. **Usar o
+  campo `type`** (`DEBIT` = saída, `CREDIT` = entrada), que a Pluggy já
+  normaliza nos dois tipos de conta (compra no cartão é sempre `DEBIT`), em vez
+  de deduzir o sentido pelo sinal de `amount`.
+- **A autorização do MeuPluggy dura 1 ano** (`consentExpiresAt` no item), à
+  parte dos consentimentos de cada banco. Expirada, as leituras voltam vazias e
+  a próxima atualização falha com `USER_AUTHORIZATION_EXPIRED`. Renovar: Dashboard
+  → Aplicação → Demo → Conectar Conta → MeuPluggy. A saúde da conexão (14.9)
+  deve avisar **antes** de vencer. Depois de renovar, conferir se o `itemId` mudou.
+- **Cada banco do Meu Pluggy vira um item** na aplicação, e `GET /v2/items` não
+  lista itens do Meu Pluggy: os ids ficam guardados na configuração.
+- **A data de "última atualização" do item no Dashboard não acompanha a
+  sincronização** (em nov/2026 mostrava 06/10 com o Meu Pluggy em dia). O
+  botão de atualizar do Dashboard não funciona para itens MeuPluggy (esperado).
+- `creditCardMetadata.billForecastDate` (`AAAA-MM`) informa em qual fatura uma
+  compra deve cair, inclusive pendente: pode refinar o ciclo do crédito (14.10).
+- **A validar na Fase A:** o conector MeuPluggy é documentado como
+  `isOpenFinance = false`, e `providerId` e `operationType` são "só Open
+  Finance". Se não vierem pelo proxy, a chave de deduplicação (14.7) e a
+  classificação de 14.5 precisam de alternativa. Script:
+  `integracao/reconhecimento.mjs`, com credenciais em
+  `%USERPROFILE%.financaspluggy.env` (fora do repositório e do OneDrive).
 
 **Correção de desenho: contagem dupla antes do casamento**
 
