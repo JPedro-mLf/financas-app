@@ -1481,14 +1481,19 @@ data parada no Dashboard não reflete isso). Autorização do MeuPluggy vence em
    (42 lançamentos no Santander, 1 no Bradesco): o realizado chega sozinho, e
    dá para comparar a taxa efetiva com `config.taxa_cheque_especial`.
 
-**Pontos a verificar com o usuário**
+**Pontos verificados com o usuário (27/11/2026)**
 
-- **Inter** só tem lançamentos de dez/2025: conta sem uso ou conexão que parou?
-- Conta corrente do **Nubank e do Santander**: última transação em 13/11,
-  embora sincronizadas em 26–27/11. Confirmar no app do banco se houve
-  movimento depois disso (atraso do banco no Open Finance ou falta de dados).
-- `OPERACOES_CREDITO_CONTRATADAS_CARTAO` é frequente no Nubank (135): entender
-  o que são (parcelamento de fatura? compra parcelada?) antes do motor de 14.6.
+- **Inter** quase sem movimento: conta mantida de propósito (uso previsto nos
+  próximos meses). A conexão fica; ocupa 1 das 5 do plano gratuito.
+- Conta corrente do **Nubank e do Santander** com última transação em 13/11:
+  **correto**, não houve movimento depois. Sem atraso do banco.
+- `OPERACOES_CREDITO_CONTRATADAS_CARTAO` no Nubank (135): segundo o usuário,
+  são **Pix pagos com o cartão de crédito** ("Pix no crédito"). Tratamento:
+  despesa no **crédito** (entra provisória como compra, no ciclo da fatura),
+  normalmente parcelada e com juros embutidos. Não passa pela conta corrente.
+  Exceção a vigiar: um Pix no crédito para o **próprio** usuário vira entrada na
+  conta corrente (antecipação de crédito) -- o lado conta é transferência
+  própria, o lado cartão é a dívida. Confirmar com dados reais na Fase C.
 
 **Decisão [decidido]:** o "Saldo de hoje" (seção 7) é a **soma de todas as
 contas** (corrente e poupança), sem os cartões: o que se deve no cartão já
