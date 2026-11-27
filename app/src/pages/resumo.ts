@@ -12,7 +12,7 @@ type ResumoCiclo = {
   despesas_previstas: number;
 };
 
-type PrevisaoLinha = { ciclo: string; saldo_projetado: number };
+type PrevisaoLinha = { ciclo: string; saldo_projetado: number; juros_cheque_especial?: number };
 type ReservaLinha = { descricao: string; reserva_acumulada: number };
 type CategoriaLinha = { categoria_nome: string; total: number };
 
@@ -42,7 +42,7 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
   // que esta sendo visualizado. So o card do ciclo (e o saldo acumulado
   // dentro dele) mudam.
   const [previsaoRes, alertasRes, reservasRes] = await Promise.all([
-    supabase.from('v_previsao').select('ciclo, saldo_projetado').order('ciclo'),
+    supabase.from('v_previsao').select('ciclo, saldo_projetado, juros_cheque_especial').order('ciclo'),
     supabase.from('v_alertas').select('ciclo, saldo_projetado').order('ciclo'),
     supabase.from('v_reserva_estimados').select('descricao, reserva_acumulada').order('descricao'),
   ]);
@@ -68,7 +68,11 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
     ${
       previsao.length === 0
         ? '<p>Sem previsao ainda -- registre um saldo apurado em Configuracao para comecar a projetar.</p>'
-        : `<ul>${previsao.map((p) => `<li>${rotuloCiclo(p.ciclo)}: ${formatBRL(p.saldo_projetado)}</li>`).join('')}</ul>`
+        : `<ul>${previsao.map((p) => `<li>${rotuloCiclo(p.ciclo)}: ${formatBRL(p.saldo_projetado)}${
+            p.juros_cheque_especial
+              ? ` <span class="msg juros">(inclui ${formatBRL(-p.juros_cheque_especial)} de juros do cheque especial)</span>`
+              : ''
+          }</li>`).join('')}</ul>`
     }
 
     ${
@@ -89,7 +93,7 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
 
   const [resumoRes, acumuladoRes, categoriasRes, periodo] = await Promise.all([
     supabase.from('v_resumo_ciclo').select('*').eq('ciclo', ciclo).maybeSingle(),
-    supabase.from('v_saldo_acumulado').select('saldo_acumulado').eq('ciclo', ciclo).maybeSingle(),
+    supabase.from('v_saldo_acumulado').select('saldo_acumulado, juros_cheque_especial').eq('ciclo', ciclo).maybeSingle(),
     supabase
       .from('v_gastos_por_categoria')
       .select('categoria_nome, total')
@@ -105,7 +109,9 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
   }
 
   const resumoTipado = resumoRes.data as ResumoCiclo | null;
-  const saldoAcumulado = (acumuladoRes.data as { saldo_acumulado: number } | null)?.saldo_acumulado;
+  const acumulado = acumuladoRes.data as { saldo_acumulado: number; juros_cheque_especial: number } | null;
+  const saldoAcumulado = acumulado?.saldo_acumulado;
+  const jurosChequeEspecial = acumulado?.juros_cheque_especial ?? 0;
   const categorias = (categoriasRes.data ?? []) as CategoriaLinha[];
 
   page.innerHTML = `
@@ -125,7 +131,13 @@ async function renderCiclo(page: HTMLElement, ciclo: string, cicloAtual: string,
       <p>Previsto: ${formatBRL((resumoTipado?.receitas_previstas ?? 0) - (resumoTipado?.despesas_previstas ?? 0))}</p>
       ${
         saldoAcumulado != null
-          ? `<p class="acumulado"><strong>Saldo acumulado ate aqui: ${formatBRL(saldoAcumulado)}</strong></p>`
+          ? `<p class="acumulado"><strong>Saldo acumulado ate aqui: ${formatBRL(saldoAcumulado)}</strong></p>
+             ${
+               jurosChequeEspecial > 0
+                 ? `<p class="msg juros">Juros do cheque especial previstos neste mes: ${formatBRL(-jurosChequeEspecial)}
+                      (o mes anterior terminou negativo; ja descontados do saldo acumulado)</p>`
+                 : ''
+             }`
           : '<p class="msg">Sem saldo acumulado -- registre um saldo apurado em Configuracao.</p>'
       }
     </section>

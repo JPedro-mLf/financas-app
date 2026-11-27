@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabaseClient';
 import { formatBRL, rotuloCiclo, todayISO } from '../lib/format';
 
-type Config = { dia_fechamento: number; dia_vencimento: number; horizonte_meses: number };
+type Config = { dia_fechamento: number; dia_vencimento: number; horizonte_meses: number; taxa_cheque_especial: number };
 type Categoria = { id: string; nome: string; tipo: 'receita' | 'despesa'; ativa: boolean };
 type Desconto = { id: string; descricao: string; percentual: number | null; valor_fixo: number | null };
 
@@ -43,6 +43,11 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
         <label>Horizonte de previsao (meses)
           <input type="number" name="horizonte_meses" min="1" max="24" value="${config?.horizonte_meses ?? 3}" required>
         </label>
+        <label>Juros do cheque especial (% ao mes, com IOF)
+          <input type="number" name="taxa_cheque_especial" min="0" max="100" step="0.001" inputmode="decimal"
+            value="${Number(((config?.taxa_cheque_especial ?? 0.08965) * 100).toFixed(3))}" required>
+        </label>
+        <p class="msg">Cobrado na previsao sobre o saldo acumulado que terminar um mes negativo.</p>
         <button type="submit">Salvar</button>
         <p class="msg" id="msg-config" hidden></p>
       </form>
@@ -122,6 +127,8 @@ function wireConfigForm(page: HTMLElement, userId: string | undefined): void {
       dia_fechamento: Number(dados.get('dia_fechamento')),
       dia_vencimento: Number(dados.get('dia_vencimento')),
       horizonte_meses: Number(dados.get('horizonte_meses')),
+      // A tela fala em %; o banco guarda a fracao (8,965% -> 0.08965).
+      taxa_cheque_especial: Number((Number(dados.get('taxa_cheque_especial')) / 100).toFixed(5)),
     });
 
     msg.hidden = false;

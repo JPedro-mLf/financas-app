@@ -342,3 +342,8 @@ button:disabled {
   padding: 0.5rem;
   border-radius: 0.5rem;
 }
+
+/* Juros de cheque especial previstos no ciclo -- mesma cor do alerta de saldo negativo. */
+.msg.juros {
+  color: var(--cor-alerta);
+}
