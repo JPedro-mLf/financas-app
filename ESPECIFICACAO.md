@@ -351,9 +351,9 @@ em aberto; o design abaixo é o que foi construído e testado):
 | `v_avulsos` | Normaliza avulsos para o formato comum |
 | `v_fluxo` | `union all` das três acima — a tabela-fato que o Power BI consome |
 | `v_resumo_ciclo` | Receitas, despesas, saldo do ciclo, previsto vs. realizado |
-| `v_previsao` | Saldo acumulado projetado ao longo de `horizonte_meses`, só pra frente |
+| `v_previsao` | Saldo acumulado projetado ao longo de `horizonte_meses`, só pra frente (lê de `v_saldo_acumulado`, juros incluídos) |
 | `v_alertas` | Sinaliza saldo negativo previsto dentro do horizonte |
-| `v_saldo_acumulado` | Saldo acumulado até qualquer ciclo (passado, atual ou futuro), ancorado no último saldo apurado |
+| `v_saldo_acumulado` | Saldo acumulado até qualquer ciclo (passado, atual ou futuro), ancorado no último saldo apurado; nos ciclos futuros, desconta juros de cheque especial (`juros_cheque_especial`) |
 | `v_reserva_estimados` | Reserva acumulada dos itens `estimado`: soma de previsto − realizado nos ciclos já confirmados |
 | `v_gastos_por_categoria` | Total por categoria, por ciclo e por tipo — alimenta o ranking de gastos do Resumo |
 
@@ -410,6 +410,28 @@ Decisões de design tomadas na implementação:
   over (order by ciclo)`, sempre crescente) e subtrai o prefixo no ciclo-âncora
   do prefixo no ciclo-alvo -- funciona para ciclos antes ou depois da âncora
   sem precisar de dois ramos de cálculo com sinal invertido.
+- **Juros de cheque especial na projeção (nov/2026).** Saldo acumulado negativo
+  no fim de um ciclo é cheque especial, e o banco cobra juros sobre ele no ciclo
+  seguinte. `v_saldo_acumulado` passa a cobrar isso nos ciclos **futuros**:
+  `juros(C) = taxa × max(0, −acumulado(C−1))` e
+  `acumulado(C) = acumulado(C−1) + saldo(C) − juros(C)`. Juros sobre juros saem
+  sozinhos enquanto o saldo seguir negativo.
+  - **Só depois do corte** `max(ciclo da âncora, ciclo atual)`: o passado é
+    realizado, e o juro cobrado de verdade entra como lançamento real (e, com a
+    seção 14, chega sozinho do banco). O ponto de partida é o saldo apurado
+    informado pelo usuário: se ele for negativo, o ciclo seguinte já cobra juros.
+  - **Taxa em `config.taxa_cheque_especial`** (fração; padrão `0.08965` =
+    8,965% a.m., juros de 8% + IOF), editável em Configuração como %. Taxa
+    única é aproximação levemente pessimista: o IOF fixo de 0,38% incide só
+    sobre o valor que *entrou* no negativo, não sobre o saldo inteiro todo mês.
+  - **Limite conhecido:** olha só o saldo no **fim** do ciclo. Negativo apenas
+    no meio do mês (antes do salário) gera juros reais que a projeção não vê.
+  - Como cada ciclo passa a depender do anterior, a soma-prefixo vira recursão
+    nos ciclos futuros (os anteriores continuam pela soma-prefixo, com o mesmo
+    valor de antes, conferido ciclo a ciclo). **`v_previsao` passa a ler de
+    `v_saldo_acumulado`**: uma regra só, e os dois números nunca divergem.
+  - O Resumo mostra os juros previstos do mês e, na Previsão do horizonte,
+    quanto de cada saldo é juro. Teste pgTAP: `03_cheque_especial.sql`.
 - **`v_reserva_estimados`** responde a uma pergunta que surgiu em uso real:
   quando um item `estimado` (combustível, manutenção) custa menos que o
   provisionado num mês, essa diferença "some" ou fica guardada em algum
@@ -504,6 +526,9 @@ do Supabase Studio. Editar o *valor realizado de um ciclo específico* de um
 recorrente, isso o app já cobre (Ciclo atual e Extrato); e excluir um avulso
 específico também (Extrato).
 
+> **Atualização:** a integração bancária, citada acima como fora do escopo da v1,
+> passou a ser a v2 -- ver seção 14.
+
 > **Nota histórica (evolução em uso real):** as telas Ciclo atual e Extrato
 > não nasceram assim. Ciclo atual só deixava editar o valor realizado dos
 > itens `estimado`, e não existia nenhuma forma de olhar meses passados ou
@@ -569,6 +594,9 @@ específico também (Extrato).
 8. Migração dos dados históricos.
 
 Os passos 2 e 3 são portões: não avançar sem eles verdes.
+
+> **Atualização (v2):** a integração Open Finance (seção 14) é executada **antes**
+> do passo 7 (Power BI). Os passos 1–6 e 8 estão concluídos (seção 13).
 
 ---
 
@@ -654,6 +682,8 @@ usado, sem nenhuma ocorrência histórica para consultar).
   meio mais frequente entre elas. Isso corrigiu palpites da v1 que estavam
   errados -- ex.: "Financiamento Uno" e sua entrada, que a v1 chutou como
   `debito` (parecia um financiamento bancário), na real são pagos por `pix`.
+  *(Correção em out/2026, ver 14.15: o usuário informa que financiamentos e
+  empréstimos são sempre pagos por débito direto automático.)*
 - **Nem todo item chamado "Pix" no nome é pago em pix de verdade.** Dois
   parcelamentos com "Pix" na própria descrição (`Carona BJ-CG-BJ - Pix
   parcelado`, `Pix Rifa Casamento...`) tiveram `Crédito` como meio
@@ -726,7 +756,8 @@ Fases 0–6 e 8 completas. Fase 7 (Power BI) é a única que falta.
   dois bugs só visíveis contra o Cloud (ver nota histórica da seção 9).
 - **Fase 8 (migração):** dados históricos da planilha `Controle de Despesas`
   migrados por completo -- ver seção 11 para as decisões e descobertas.
-- **Fase 7 (Power BI):** não iniciada.
+- **Fase 7 (Power BI):** não iniciada; passa a vir **depois** da integração
+  Open Finance (seção 14).
 
 ### Iterações pós-lançamento (uso real, ainda dentro da v1)
 
@@ -739,3 +770,620 @@ de "deploy" mas depois de tudo que é motor de cálculo: boa parte do que
 realmente falta descobrir num app de finanças pessoal só aparece usando ele
 de verdade, com dinheiro de verdade, mês após mês -- não dá pra prever tudo
 sentado na especificação.
+
+---
+
+## 14. Integração Open Finance (Pluggy) — v2
+
+> Acrescentada após o uso real da v1. **Esta etapa vem antes da Fase 7 (Power BI)
+> da seção 10.** Mesmo espírito das seções 11 e 13: o que já está escrito não se
+> apaga, só se acrescenta.
+>
+> Marcações usadas nesta seção:
+> **[decidido]** decisão do usuário · **[verificado]** confirmado na documentação
+> da Pluggy (consultada em outubro/2026) · **[a validar]** hipótese de projeto
+> que depende do teste de reconhecimento (14.13, Fase A) ou de uso real.
+
+### 14.1 Objetivo e motivação
+
+O problema real da v1 não é de cálculo, é de digitação. Esquecer ou não ter tempo
+de lançar cria buracos no extrato, e buraco no extrato destrói a previsibilidade,
+que é a razão de existir do sistema **[decidido]**.
+
+A v2 troca **digitar** por **revisar**: as transações chegam sozinhas dos bancos
+via Open Finance e o usuário só decide o que for ambíguo. O princípio central
+(14.5) é que a previsão **não pode depender** de o usuário revisar: o que é seguro
+de contar entra no saldo na hora; o que é ambíguo espera confirmação, mas fica
+visível.
+
+Escopo: somente leitura (contas, cartões, transações, faturas). Fora do escopo:
+iniciar pagamentos, investimentos, identidade.
+
+### 14.2 Premissas e restrições
+
+**Caminho de acesso [decidido] [verificado].** API da Pluggy por meio do
+**Meu Pluggy**: os bancos são autorizados em `meu.pluggy.ai`, e uma aplicação no
+Dashboard (mesma conta) conecta o conector **MeuPluggy (id 200)** como proxy.
+**Não criar conexões diretas pelo Dashboard**: depois do trial de 15 dias elas
+pausam, e vários conectores diretos de pessoa física estão sendo descontinuados.
+O trial não afeta o MeuPluggy. A integração direta pela API é o caminho
+preferido; extrair dados das telas do Meu Pluggy/Dashboard só seria plano B se a
+API se mostrasse inviável (frágil, e exigiria guardar login).
+
+**Limites do uso pessoal [verificado].** Até 5 conexões ativas, mesmo titular,
+uso não comercial. Uma autorização por banco no conector (banco adicionado
+depois exige nova autorização). Atualização automática a cada 24 h, gratuita,
+**sem como forçar** (o item proxy não aceita atualização manual). Consequência
+de projeto: não existe tempo real; defasagem de até cerca de um dia é normal.
+
+**Limites do Open Finance por CPF, por instituição, por mês [verificado].**
+Transações históricas (de 7 dias a 12 meses): **4 chamadas**; recentes: 240;
+listagem de contas: 30. O histórico disponível é de até **12 meses**. Regra
+dura: **nunca apagar e recriar itens/conexões para testar** — isso gasta a cota
+histórica por até um mês. Todo ambiente (inclusive o projeto-cópia, 14.3) lê do
+**mesmo item** MeuPluggy.
+
+**API.** Usar `GET /v2/transactions` (paginação por cursor, `ids` com no máximo
+500 por chamada). Contas criadas a partir de junho/2026 já usam o v2 por padrão e
+o v1 será descontinuado para elas em dezembro/2026 **[verificado]**.
+
+**R1 (custo zero).** MeuPluggy é gratuito; Edge Functions e GitHub Actions ficam
+dentro dos planos gratuitos; nenhum serviço novo recebe cartão cadastrado.
+
+**R2/R3 (segurança).**
+
+- `CLIENT_ID`/`CLIENT_SECRET` da Pluggy e o CPF do titular existem **somente**
+  como secrets do Supabase (Edge Functions). Nunca no repositório, no front-end,
+  em `.env` versionado, em log, em prompt ou neste documento.
+- **Lista fixa de campos (whitelist).** A função grava apenas: data, valor,
+  sentido, descrição, tipo de operação, tipo de conta, status Pluggy, ids
+  técnicos (`pluggy_id`, `provider_id`, `bill_id`, `conta_pluggy_id`) e dados de
+  parcela. **Descarta** CPF/CNPJ, agência, número de conta e o restante do
+  `paymentData`. O destinatário de um Pix é reduzido a um booleano
+  (`transferencia_propria`) calculado dentro da função.
+- Os ids técnicos da Pluggy e o `provider_id` não são "identificador bancário"
+  no sentido de R3 (não dão acesso a nada); são permitidos.
+- Descrições de Pix trazem **nomes de terceiros**. Não é dado que cause fraude,
+  mas é privacidade. A criptografia client-side de `descricao` (seção 12) ganha
+  relevância e deve ser reavaliada assim que a integração estiver em uso.
+- O servidor MCP da Pluggy conectado ao Claude serve só para **documentação**.
+  As ferramentas de escrita dele não injetam credencial, e **nenhum segredo é
+  colado em chat**. Testes com credenciais rodam localmente no Claude Code.
+
+### 14.3 Ambiente: projeto-cópia
+
+- **Projeto Supabase novo, cópia do atual [decidido].** O projeto atual
+  (`Finances-DB`) permanece **intacto** e é a referência. O novo ocupa o 2º e
+  último projeto do plano gratuito e precisa do próprio keepalive.
+- Criação: `supabase link` no projeto novo + `supabase db push` das mesmas
+  migrations (nunca copiar tabelas à mão), depois as migrations da v2. Os 36
+  testes pgTAP existentes continuam sendo portões.
+- **"Limpar o banco e importar pela API" [decidido] significa limpar
+  *movimentos*, mantendo *cadastros*.** Remove `avulsos` e `execucoes`. Mantém
+  `config`, `categorias`, `recorrentes`, `parcelamentos`, `descontos_folha` e
+  `saldos`, que são regras e projeção futura que a Pluggy não fornece.
+- O `--wipe` atual do `importar.mjs` apaga cadastros: **não usar** aqui. Criar
+  `--wipe-movimentos`, com a mesma confirmação digitada (`APAGAR`).
+- Consequência assumida: o histórico anterior à janela de ~12 meses da API só
+  existe no projeto atual. Ver pendência sobre ciclos antigos em 14.15.
+- Destino do projeto-cópia depois de validado (virar produção ou ser
+  descartado): **em aberto** (14.15).
+
+### 14.4 Fluxo ponta a ponta
+
+```
+meu.pluggy.ai     consentimento Open Finance (autorização por banco) + sync a cada 24 h
+   ↓ conector MeuPluggy (id 200), item "proxy"
+API da Pluggy ── webhooks transactions/created|updated|deleted ──▶ Edge Function pluggy-webhook
+   ▲                                                                   │ valida cabeçalho secreto,
+   │                                                                   │ responde 2xx rápido
+   └── GET /v2/transactions · /bills · /items (apiKey por CLIENT_ID/SECRET) ◀┘
+                                                                       ↓ whitelist de campos (R3)
+                         transacoes_bancarias (staging, RLS) ──▶ casar_transacoes_bancarias()  [SQL]
+                                                                       ↓
+        vinculada (recorrente · parcela · liquidação) │ provisória (crédito/débito) │ para_revisar
+                                                                       ↓
+                       v_fluxo (cada transação conta exatamente uma vez) ──▶ App · Power BI
+
+GitHub Actions (cron) ──▶ Edge Function pluggy-sync
+                          conferência diária (14 dias) + semanal (90 dias) + saúde das conexões
+```
+
+### 14.5 Regras de contagem (princípio central)
+
+A aba do app chama-se **"Para revisar" [decidido]**. Não usar "Pendente": a
+Pluggy já usa `PENDING` com outro sentido (fatura aberta) e o schema já tem
+`pendente` em `status_execucao`. Três "pendentes" diferentes confundem.
+
+Regra do usuário **[decidido]**: só **crédito, débito e parcelamentos** entram no
+cálculo, no resumo e na previsão **antes** de confirmados. Pix, transferências e
+as demais só contam **depois** de confirmados (podem ser transferências entre
+contas do próprio usuário, que não são gasto).
+
+| Origem na Pluggy | Estado inicial | Entra no saldo/previsão? |
+|---|---|---|
+| Compra no cartão de crédito (`tipo_conta = CREDIT`, saída, `tipo_operacao = PAGAMENTO`) | `para_revisar` (ou `vinculada`, se casar) | **Sim, provisório**, com o ciclo da regra do crédito (`ciclo_caixa`) |
+| Compra no débito (`tipo_conta = BANK`, `tipo_operacao = CARTAO`) **[a validar]** | `para_revisar` | **Sim, provisório** |
+| Parcela de parcelamento cadastrado | `vinculada` à série | Sim, por `v_parcelas` (não pela staging) |
+| Recorrente casado (salário, assinatura, conta, financiamento/empréstimo em débito automático) | `vinculada` à execução (`pago`) | Sim, pela execução |
+| Pagamento de fatura (lado cartão `PAGAMENTO_FATURA`; lado conta casado com ele) | `vinculada` como liquidação | **Não**: liquida compras já contadas |
+| Pix, TED, DOC, boleto, depósito e demais, de entrada ou saída | `para_revisar` | **Não**, só após confirmar |
+| Tipos do cartão fora de compra (estorno, cashback, tarifa, operação de crédito contratada) | `para_revisar` | **Não**, só após confirmar |
+| Transferência própria (`transferencia_propria = true`) | `para_revisar`, sugestão "ignorar" | Não |
+| Transação removida pela Pluggy | `removida` | Não |
+
+**Invariante da contagem única.** Cada transação do banco contribui para saldo e
+previsão **no máximo uma vez, por exatamente um caminho**:
+
+1. provisória (`estado = 'para_revisar'` e elegível pela tabela acima), **ou**
+2. pelo cadastro a que foi vinculada (execução, parcela), **ou**
+3. pelo `avulso` criado na confirmação.
+
+Nunca por dois ao mesmo tempo. Este é o **Portão 3** (14.12) e mora em teste
+pgTAP **[decidido]**.
+
+**Ciclo de vida de um item:**
+
+- **Confirmar:** vira um `avulsos` (categoria, meio e tipo escolhidos ou
+  sugeridos, `transacao_banco_id` preenchido, valor do banco) e a linha da
+  staging passa a `confirmada`. A contagem **muda de caminho** (de provisória
+  para o avulso), sem somar duas vezes.
+- **Ignorar:** `ignorada`. Fica guardada para não ser reimportada e para poder
+  ser desfeita.
+- **Vincular a algo existente:** `vinculada`, com o vínculo registrado.
+- **Desfazer:** volta a `para_revisar` e desfaz o avulso/vínculo criado.
+- **Removida pelo banco:** se estava `vinculada` ou `confirmada`, o app sinaliza
+  "o banco removeu esta transação" para decisão do usuário (nada se desfaz
+  sozinho). Se voltar com a mesma `chave_dedupe`, é restaurada.
+
+**Depois de confirmadas ou ignoradas, as transações saem da aba "Para
+revisar" [decidido]**: a lista mostra só o que precisa de decisão. Existe uma
+visão secundária "Revisadas" (confirmadas e ignoradas) com **desfazer**, para
+corrigir um toque errado.
+
+### 14.6 Motor de casamento
+
+Função SQL idempotente `casar_transacoes_bancarias()`: a regra mora no banco,
+como `ciclo_caixa` (R4), **nunca em JavaScript**. Roda após cada ingestão e sob
+demanda (RPC). **Precedência: a primeira regra que casar vence.**
+
+1. **Liquidação de fatura.** Lado cartão: `tipo_operacao = 'PAGAMENTO_FATURA'`.
+   Lado conta: débito cujo valor e data (±3 dias) batem com um pagamento de
+   fatura. → `vinculada`/`liquidacao`; não conta. Um débito de conta que *parece*
+   pagamento de fatura mas **não casou** NÃO entra como provisório: fica
+   `para_revisar` fora do saldo (evita contar a fatura duas vezes).
+2. **Parcela cadastrada.** Transação de crédito com `parcela_numero` e
+   `parcela_total` casa com `parcelamentos` por `valor_parcela` igual ao centavo,
+   `num_parcelas = parcela_total` e (`data_compra_original ≈ data_compra`
+   quando existir, ou semelhança de descrição). → `vinculada`/`parcelamento`.
+3. **Recorrente.** Combina ciclo esperado, janela de dias em torno de
+   `dia_referencia`, valor (exato para não estimados, faixa para `estimado`) e
+   semelhança da descrição normalizada. → grava ou atualiza `execucoes` do
+   ciclo: `status = 'pago'`, `valor_realizado` = valor do banco, `data_efetiva`
+   = data do banco. Cobre salário, assinaturas, contas e financiamentos e
+   empréstimos em débito automático (parcelas de valor e dia fixos são o caso
+   mais fácil de casar). Isso elimina o Pago/Pendente manual do Ciclo atual.
+4. **Lançamento manual existente.** `avulsos` ainda sem `transacao_banco_id`,
+   mesmo sentido, valor igual, data ±2 dias e **candidato único** → vincula
+   sozinho. Qualquer ambiguidade (mais de um candidato, valor diferente) vira
+   **sugestão** na aba: "é este o seu lançamento X?". Se o valor diferir, o app
+   mostra a diferença e oferece ajustar para o valor do banco (o banco é a
+   verdade do realizado). A descrição do banco ("PIX ENVIADO FULANO") raramente
+   se parece com a do usuário, por isso o casamento é sugestão, não certeza.
+5. **Sem casamento.** Fica `para_revisar` com sugestões: categoria e meio pelas
+   `regras_categoria` (padrão na descrição normalizada), meio inferido do tipo
+   de conta e do `tipo_operacao`. Parcelada sem cadastro: o app oferece **criar
+   parcelamento** pré-preenchido (valor da parcela, total, data da compra
+   original); ao salvar, o motor **re-casa** as parcelas já importadas com a
+   série nova, sem contar de novo.
+
+**Regras aprendidas [a validar].** Cada confirmação cria ou reforça uma regra em
+`regras_categoria`; depois de 2 confirmações do mesmo padrão ela passa a ser
+**sugestão** pré-preenchida. Nunca confirma sozinha.
+
+**Transferência própria.** Calculada na função de ingestão: o documento do
+recebedor (`paymentData`) é comparado com `OWNER_CPF` (secret) e **só o
+resultado** (`transferencia_propria`) é gravado; o documento é descartado. Pista
+adicional: `tipo_operacao = TRANSFERENCIA_MESMA_INSTITUICAO` (pista, não prova:
+também pode ser Pix para outra pessoa no mesmo banco). Sem `paymentData` para
+aquele banco, cai no fluxo normal de "Para revisar". Tratamento: `para_revisar`
+com "ignorar" a um toque, **sem ignorar automaticamente** no início — um Pix para
+si mesmo pode ser aporte numa conta de investimento (existe a categoria
+Investimentos) e ignorá-lo às escondidas apagaria um gasto real do planejamento.
+Automatizar o ignorar só depois de semanas de uso confirmando o padrão.
+
+### 14.7 Modelo de dados (v2)
+
+Esqueleto. Adaptar às colunas reais de `v_fluxo` e às convenções das migrations
+existentes.
+
+```sql
+create type estado_banco as enum
+  ('para_revisar','vinculada','confirmada','ignorada','removida');
+
+-- Staging das transações do banco. Escrita somente pela Edge Function / funções SQL.
+transacoes_bancarias (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users,
+  pluggy_id text not null,                 -- pode MUDAR (delete + recreate)
+  provider_id text,                        -- id no banco; só Open Finance; chave preferida
+  chave_dedupe text not null,              -- provider_id; senão hash(conta|data|valor|descricao)
+  conta_pluggy_id text not null,           -- id técnico da Pluggy, NÃO é número de conta
+  tipo_conta text not null check (tipo_conta in ('BANK','CREDIT')),
+  data date not null,
+  valor numeric(12,2) not null check (valor >= 0),
+  sentido text not null check (sentido in ('entrada','saida')),
+  descricao text not null,
+  tipo_operacao text,                      -- PIX, TED, BOLETO, CARTAO, PAGAMENTO_FATURA...
+  meio_inferido meio_pagamento,
+  status_pluggy text,                      -- PENDING | POSTED
+  bill_id text,
+  parcela_numero smallint, parcela_total smallint,
+  data_compra_original date,
+  transferencia_propria boolean not null default false,
+  estado estado_banco not null default 'para_revisar',
+  vinculo_tipo text check (vinculo_tipo in ('execucao','parcelamento','avulso','liquidacao')),
+  vinculo_id uuid,
+  categoria_sugerida_id uuid references categorias,
+  criada_em timestamptz not null default now(),
+  atualizada_em timestamptz not null default now(),
+  unique (user_id, chave_dedupe)
+)
+
+alter table avulsos add column transacao_banco_id uuid unique references transacoes_bancarias;
+
+regras_categoria (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid(),
+  padrao text not null,                    -- trecho normalizado da descrição
+  categoria_id uuid not null references categorias,
+  meio_pagamento meio_pagamento,
+  confirmacoes int not null default 1,
+  ativa boolean not null default true,
+  unique (user_id, padrao)
+)
+
+conexoes_pluggy (
+  user_id uuid not null, item_id text not null, apelido text,
+  status text, ultima_atualizacao timestamptz,
+  ultima_transacao_em timestamptz,
+  consentimento_revogado_em timestamptz,
+  verificada_em timestamptz,
+  primary key (user_id, item_id)
+)
+
+eventos_pluggy (event_id text primary key, user_id uuid not null,
+                tipo text not null, recebido_em timestamptz not null default now())
+
+faturas_cartao (
+  user_id uuid not null, bill_id text not null, conta_pluggy_id text not null,
+  vencimento date not null, total numeric(12,2) not null,
+  minimo numeric(12,2), permite_parcelar boolean,
+  pago numeric(12,2), encargos numeric(12,2),
+  primary key (user_id, bill_id)
+)
+```
+
+**Chave de deduplicação.** `chave_dedupe = provider_id` quando existir (só Open
+Finance **[verificado]**); senão, hash de conta + data + valor + descrição. **Não
+usar o `id` da Pluggy como chave única**: se o banco para de devolver uma
+transação por 1 a 3 dias, a Pluggy a apaga e a recria **com id novo**
+**[verificado]**.
+
+**Views novas** (todas `security_invoker = true`, como as demais):
+
+| View | Responsabilidade |
+|---|---|
+| `v_banco_provisorio` | Linhas `para_revisar` elegíveis pela tabela de 14.5, no formato de `v_fluxo` (`origem = 'banco'`, `provisorio = true`, ciclo por `ciclo_caixa(data, meio_inferido)`) |
+| `v_fluxo` (alterada) | Ganha o ramo `v_banco_provisorio` e a coluna `provisorio` (`false` nos demais). Segue sendo a única tabela-fato do Power BI |
+| `v_para_revisar` | Lista da aba: sugestões, candidatos de casamento e `conta_no_saldo` (sim/não) por linha |
+| `v_resumo_banco` | Contadores do Resumo: itens para revisar; valor aguardando confirmação **fora** do saldo (Pix/entradas); valor provisório **dentro** do saldo |
+| `v_saude_conexoes` | Estado de cada conexão e flag `atrasada` (14.9) |
+| `v_faturas_conciliacao` | Pago × devido por fatura (14.10) |
+
+### 14.8 Ingestão: Edge Functions e agendamentos
+
+**`pluggy-webhook`.** `verify_jwt = false` em `supabase/config.toml`, porque a
+Pluggy não envia JWT do Supabase; o **cabeçalho secreto passa a ser a única
+porta**.
+
+- Primeira instrução: comparar o cabeçalho secreto em tempo constante. Falhou →
+  `401` (a Pluggy não reenvia 400/401/403/404/405, o que é bom contra
+  requisições forjadas).
+- Responder `2xx` em até 10 s e processar depois. **Erro temporário devolve
+  `5xx`, nunca `4xx`**: 4xx faz o evento ser descartado **[verificado]**.
+- Deduplicar por `eventId` (`eventos_pluggy`) e por `chave_dedupe` (a Pluggy já
+  reenviou as mesmas transações quando o item é atualizado várias vezes no mesmo
+  dia **[verificado]**).
+- `transactions/created`: seguir `createdTransactionsLink` com paginação por
+  cursor. `transactions/updated`: `GET /v2/transactions?ids=…` (≤ 500) e
+  atualizar (inclui `PENDING → POSTED` e o `billId`). `transactions/deleted`:
+  marcar `removida` (14.5). `item/updated` e `item/error`: `GET /items/{id}`
+  antes de agir e atualizar a saúde (14.9).
+- Os eventos `transactions/*` não trazem `clientUserId`: o usuário é o dono único
+  (`OWNER_USER_ID`).
+- Cabeçalhos customizados de webhook só se configuram **via API**, não pelo
+  Dashboard **[verificado]**. Registro por script único
+  `integracao/registrar-webhook.mjs`, com segredos por variável de ambiente,
+  nunca impressos. A documentação também cita cabeçalho de assinatura: confirmar
+  o formato antes de implementar e validar a assinatura **além** do cabeçalho
+  secreto, se aplicável. Filtro por IP é opcional.
+
+**`pluggy-sync`.** Acionada por GitHub Actions (`.github/workflows/sync.yml`),
+autenticada por um segredo dedicado que **só dispara a sincronização** (não lê
+dados). Rotina: (a) diária — releitura dos últimos 14 dias por conta;
+(b) semanal — 90 dias; (c) `GET /items` e `GET /bills`; (d) saúde das conexões.
+Ela existe porque o webhook tem só 3 tentativas (imediata, ~15 min, ~2 h) e não
+há reenvio depois **[verificado]**. **Somente leituras (GET)**: nunca
+`PATCH /items`, nunca criar item.
+
+**Credenciais e privilégio.**
+
+- A apiKey da Pluggy vem de `POST /auth` com `CLIENT_ID`/`CLIENT_SECRET` a cada
+  execução; nunca é persistida em tabela.
+- As funções rodam **sem sessão de usuário** e usam a `service_role` injetada
+  pelo runtime do Supabase (a chave não é copiada para lugar nenhum). É a
+  **única exceção** à regra "nunca `service_role`", que continua valendo para
+  scripts, front-end e repositório. As funções só escrevem nas tabelas da
+  integração e chamam `casar_transacoes_bancarias()`.
+- Secrets: `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `WEBHOOK_SECRET`,
+  `SYNC_SECRET`, `OWNER_USER_ID`, `OWNER_CPF`.
+
+### 14.9 Saúde da conexão (falha silenciosa)
+
+Quando um consentimento é **revogado ou expira**, os endpoints de dados
+devolvem **listas vazias, sem erro** **[verificado]**. Por padrão o consentimento
+Open Finance não expira (alguns conectores têm prazo de 1 ano); o risco real é a
+revogação. Sem tratamento, a sincronização "funciona" e o usuário volta ao
+problema original sem perceber.
+
+- `conexoes_pluggy` guarda `status`, `ultima_atualizacao` e `ultima_transacao_em`,
+  alimentados por `GET /items/{id}` (eventos de item e rotina diária).
+- `v_saude_conexoes.atrasada = true` quando: última atualização há mais de 48 h;
+  status diferente de atualizado; consentimento revogado; ou nenhuma transação
+  nova em conta que costuma ter movimento por mais de N dias (N inicial: 7;
+  **[a validar]**, porque a lista vazia não é erro).
+- O app mostra um **banner** no Resumo ("Sincronização bancária atrasada desde
+  dd/mm — reconecte no Meu Pluggy"). Renovar o consentimento é feito no Meu
+  Pluggy, não no app.
+
+### 14.10 Faturas: pago × devido
+
+`GET /bills` (Open Finance) traz `dueDate`, `totalAmount`, `minimumPaymentAmount`,
+`allowsInstallments`, `payments[]` (`valueType` integral/mínimo/outro, valor,
+data, modo) e `financeCharges[]` (IOF, juros, multa) **[verificado]**. A
+disponibilidade via item MeuPluggy **[a validar]** na Fase A.
+
+- `v_faturas_conciliacao` compara `pago` com `total`. Pago a menos = fatura
+  **rolada/financiada**; o app mostra a diferença e os encargos e oferece
+  registrar o parcelamento da fatura.
+- O pagamento de uma fatura aparece na **fatura seguinte** (regra de quitação:
+  `total(N) + encargos(N+1) = pagamentos(N+1)`), então a conciliação chega com
+  defasagem. O `PAGAMENTO_FATURA` do lado cartão serve de sinal mais cedo.
+- `billId` liga cada compra à sua fatura. O vencimento real da fatura pode, no
+  futuro, **corrigir** o ciclo estimado pelo dia 27/03 (a Pluggy não distingue
+  fatura aberta de fechada no Open Finance, então o fechamento continua
+  estimado). Refinamento fora do escopo da v2 inicial.
+- **Modelagem do parcelamento de fatura: em aberto** (14.15). A regra de caixa
+  da seção 4 assume pagamento integral da fatura; ao financiar parte dela, é
+  preciso evitar contar duas vezes (compras no ciclo da fatura **e** parcelas
+  futuras). Definir com dados reais de `/bills`.
+
+### 14.11 Front-end (v2)
+
+Acréscimos ao escopo da seção 9:
+
+1. **Para revisar** (nova tela, rota por hash). Cada linha já vem preenchida
+   (categoria, meio e tipo sugeridos). Ações: **Confirmar** (um toque, usa a
+   sugestão), **Editar e confirmar**, **Ignorar**, **Vincular a…** (candidatos
+   de casamento) e **Criar parcelamento** (quando parcelada sem cadastro). Cada
+   linha mostra claramente se **já conta no saldo** (provisória) ou **não**.
+2. **Revisadas** (visão secundária): confirmadas e ignoradas, com **desfazer**.
+3. **Resumo:** contador de itens para revisar, valor aguardando confirmação
+   **fora** do saldo (Pix e entradas), valor provisório **dentro** do saldo, e o
+   banner de saúde da conexão (14.9).
+4. **Extrato:** itens provisórios com selo "provisório"; origem `banco` nas
+   linhas vindas da integração.
+5. **Configuração:** regras de categoria (listar, editar, desativar) e estado
+   das conexões.
+6. **Lançamento rápido continua existindo** (dinheiro em espécie, o que o banco
+   não vê). O motor de casamento evita duplicar o que depois aparecer no banco.
+
+Todas as ações de revisão passam por **RPC** (`confirmar_transacao`,
+`ignorar_transacao`, `vincular_transacao`, `desfazer_transacao`); o app não
+escreve direto nas tabelas da integração. Nenhum cálculo no cliente (princípio
+da seção 3).
+
+### 14.12 Segurança e portões
+
+- **RLS em todas as tabelas novas**, mesma policy `user_id = auth.uid()`.
+- **`GRANT`s explícitos** (lição da seção 8): para `authenticated`, apenas
+  `SELECT` em `transacoes_bancarias`, `conexoes_pluggy`, `eventos_pluggy` e
+  `faturas_cartao`; CRUD em `regras_categoria`; `SELECT` nas views novas;
+  `EXECUTE` nas RPCs. **Nenhum `INSERT/UPDATE/DELETE` direto** do cliente nas
+  tabelas da integração. `anon`: no máximo `SELECT` (RLS devolve zero linhas).
+- **RPCs `security definer`** com `set search_path = public` e filtro explícito
+  `user_id = auth.uid()` em toda leitura e escrita. É a armadilha clássica de
+  `security definer`; coberta por teste.
+- **Portão 3 — contagem única (pgTAP).** Casos mínimos: crédito/débito
+  provisório conta; Pix e entradas não contam até confirmar; confirmar **não
+  soma duas vezes** (provisório → avulso); `vinculada` conta só pelo cadastro;
+  liquidação de fatura não conta; `ignorada` e `removida` não contam; transação
+  recriada pela Pluggy com **id novo e mesmo `provider_id`** não duplica;
+  transferência própria não conta; criar parcelamento e re-casar não duplica.
+- **Portão 4 — RLS/GRANT dos objetos novos.** `anon` sem sessão lê zero linhas
+  em todas as tabelas novas (via API REST real, também no cloud); usuário B não
+  confirma, ignora nem lê transação do usuário A (padrão do `02_rls_leak.sql`).
+- **Portão 5 — webhook e segredos.** Requisição sem cabeçalho ou com cabeçalho
+  errado → `401` e **nada gravado**; payload com campos extras → linha gravada
+  **sem** CPF/CNPJ/conta; busca no repositório e no histórico git não encontra
+  nenhum dos secrets de 14.8; teste local do webhook com payload falso.
+- **Portão A — reconhecimento documentado** antes de qualquer código (14.13).
+- **Portão G — dry-run** da importação inicial revisado antes de gravar.
+
+### 14.13 Fases de implementação
+
+Executar **antes** da Fase 7 (Power BI). Não avançar sem o portão da fase verde.
+
+**Fase A — Reconhecimento (somente leitura, local).** Script
+`integracao/reconhecimento.mjs`, executado no Claude Code, com credenciais por
+variável de ambiente ou prompt (como o `importar.mjs`). Para cada conta imprime
+**somente contagens e presença de campos**: tipo e subtipo da conta; nº de
+transações em 12 meses; distribuição de `tipo_operacao`/`paymentMethod`; % com
+`paymentData`, com `providerId`, com `billId`, `installmentNumber`,
+`totalInstallments` e `paymentType`; nº de faturas em `/bills`; e do item
+`status`, `consentExpiresAt` e última atualização. **Proibido imprimir nomes,
+valores, descrições ou documentos.** Perguntas a responder: (1) em quais bancos o
+`paymentData` chega e se permite reconhecer o destinatário; (2) se o item
+MeuPluggy expõe faturas e `providerId`; (3) como aparecem Pix, compra no débito,
+débito automático, pagamento de fatura (nos dois lados) e salário; (4) como cada
+cartão posta parcelas (todas de uma vez ou mês a mês). **Resultado registrado em
+14.15 antes da Fase C.** Usa uma única vez a cota de histórico; **não repetir em
+laço**.
+
+**Fase B — Ambiente.** Projeto-cópia (14.3), `db push`, `--wipe-movimentos`,
+keepalive próprio, RLS verificado no cloud.
+
+**Fase C — Schema e motor (SQL).** Tabelas, enum, `casar_transacoes_bancarias()`,
+views, RPCs, `GRANT`s. **Portões 3 e 4.**
+
+**Fase D — Ingestão.** `pluggy-webhook`, `pluggy-sync`, `registrar-webhook.mjs`,
+`sync.yml`, secrets. **Portão 5.**
+
+**Fase E — App.** Telas e contadores de 14.11, banner de saúde.
+
+**Fase F — Faturas.** `faturas_cartao`, `v_faturas_conciliacao`, e fechar a
+modelagem do parcelamento de fatura com dados reais.
+
+**Fase G — Importação inicial.** Uma única busca de 12 meses (cota histórica);
+se falhar, **não repetir em laço**. Primeiro em modo de simulação, listando
+contagens por estado e os não casados; depois grava. **Portão G.** Idempotente
+e reexecutável (a deduplicação por `chave_dedupe` garante).
+
+Depois: **Fase 7 (Power BI)** consome `v_fluxo` (já com `provisorio`) e as views
+da seção 7. Nada além disso é conectado ao BI.
+
+### 14.14 Limites e armadilhas documentados
+
+Para o Claude Code não redescobrir a cada tarefa **[verificado]**:
+
+- Sync do Meu Pluggy a cada 24 h; o item proxy **não** pode ser atualizado
+  manualmente. Sem tempo real.
+- Consentimento revogado/expirado → listas vazias **sem erro** (14.9).
+- Ids de transação mudam em delete + recreate → usar `provider_id` (14.7).
+- Webhooks: resposta em ≤ 10 s; 3 tentativas (0, ~15 min, ~2 h); 400, 401, 403,
+  404 e 405 **não** são reenviados; mesmas transações podem reaparecer em
+  atualizações repetidas no mesmo dia.
+- A atualização diária busca só os últimos 7 dias; mudanças em transações mais
+  antigas (`PENDING → POSTED`, `billId`, parcelas novas) só chegam por webhook ou
+  pela conferência (14.8).
+- `PENDING` = fatura ainda aberta (sem `billId`); `POSTED` = fatura vencida (com
+  `billId`). Não dá para distinguir fatura aberta de fechada.
+- **Parcelas:** cada banco posta de um jeito (todas de uma vez, uma por mês, ou só
+  a atual); não há id que agrupe as parcelas de uma compra; o Open Finance não
+  devolve o total da compra. Agrupar por `parcela_numero`, `parcela_total`, data
+  da primeira parcela e comerciante. **Não contar com parcelas futuras da
+  Pluggy**: os parcelamentos cadastrados continuam sendo a fonte da projeção.
+- `paymentData` existe nos dois tipos de conexão, mas o quão completo vem varia
+  por instituição, e só algumas transações de pagamento/transferência o trazem.
+- Open Finance exige `GET /v2/transactions` por cursor; `ids` ≤ 500.
+- Conectores diretos de pessoa física estão sendo descontinuados; usar apenas
+  Open Finance (via MeuPluggy).
+
+### 14.15 Decisões, pendências e correções
+
+**Decisões do usuário [decidido]**
+
+- Integração direta pela API da Pluggy, via Meu Pluggy (14.2).
+- Projeto Supabase novo, cópia do atual; atual intacto; limpar movimentos e
+  importar pela API (14.3).
+- Aba **"Para revisar"** (nome); saem da aba após confirmadas (14.5).
+- Contagem imediata só para crédito, débito e parcelamentos; Pix, transferências
+  e demais só após confirmar (14.5).
+- Teste pgTAP de contagem única (Portão 3).
+- Quer comparar o valor pago da fatura com o devido (14.10).
+- Tratar Pix de saída cujo destinatário seja o próprio usuário (14.6).
+
+**Em aberto**
+
+1. **Destino do projeto-cópia** depois de validado: virar produção ou ser
+   descartado.
+2. **Pix de saída:** contar automaticamente quando o destinatário já foi
+   confirmado antes como despesa? Padrão adotado até decisão: **não**, só após
+   confirmar.
+3. **Transferência própria:** padrão atual é `para_revisar` com "ignorar" a um
+   toque; automatizar o ignorar só depois de semanas de uso.
+4. **Ciclos anteriores à janela da API (~12 meses)** no projeto-cópia ficam sem
+   `execucoes`: os recorrentes aparecem como previstos, não pagos. Decidir entre
+   ajustar `data_inicio` dos recorrentes para o primeiro ciclo da janela ou
+   aceitar histórico incompleto na cópia.
+5. **Modelagem do parcelamento de fatura** (14.10).
+6. **Fase A:** `paymentData`, faturas e `providerId` no item MeuPluggy; como
+   aparecem débito automático, compra no débito e pagamento de fatura.
+7. **Resultado do reconhecimento (Fase A):** *preencher aqui antes da Fase C.*
+
+**Correção a registros anteriores (out/2026).** A nota da remigração v2 na
+seção 11 registra "Financiamento Uno e sua entrada" como pagos por `pix`. O
+usuário informa que **financiamentos e empréstimos são sempre pagos por débito
+direto automático na conta**. Ação: corrigir `meio_pagamento` para `debito` nos
+cadastros de financiamento e empréstimo (`recorrentes` e `parcelamentos`),
+conferindo separadamente a entrada do financiamento, que, se foi paga à parte,
+pode ter sido Pix de verdade. Nenhuma previsão muda (pix e débito caem no mesmo ciclo em
+`ciclo_caixa`), mas com a integração o meio passa a decidir o tratamento.
+
+### 14.16 Revisão da seção 14 (nov/2026)
+
+Revisão feita com o Claude Code, conferindo as afirmações **[verificado]** na
+documentação da Pluggy (servidor MCP `pluggy-docs`, nov/2026). As afirmações
+centrais conferem: conector MeuPluggy (id 200) gratuito para uso pessoal e não
+afetado pelo fim do trial; item proxy sem atualização manual; webhooks com 3
+tentativas e sem reenvio de 401; consentimento revogado devolvendo listas vazias
+sem erro. Acréscimos e correções:
+
+**Decisões [decidido]**
+
+- **Começar sem webhook.** A ingestão inicial é só a `pluggy-sync`, **uma vez
+  por dia**. O Meu Pluggy só atualiza a cada 24 h, então o webhook ganharia no
+  máximo algumas horas, e ele é a única porta pública sem JWT da integração.
+  `pluggy-webhook`, `eventos_pluggy` e `registrar-webhook.mjs` ficam para depois,
+  se fizer falta; o desenho de 14.8 continua valendo para quando entrarem.
+  Consequência: a conferência diária (14.8, item a) deixa de ser rede de
+  segurança e passa a ser o caminho principal.
+
+**Correções [verificado]**
+
+- **Cabeçalho customizado do webhook:** hoje também se configura pelo
+  Dashboard (Webhooks, só o Owner), não só pela API, como dizia 14.8.
+- **Assinatura HMAC do webhook:** a Pluggy assina cada notificação em
+  `X-Pluggy-Signature: t=<unix>,v1=<hex>`, HMAC-SHA256 de `<t>.<corpo cru>` com
+  o segredo `whsec_…` gerado no Dashboard. É a única camada que prova origem
+  **e** integridade, e já protege de replay (tolerância de 5 min em `t`).
+  Quando o webhook entrar: exigir **assinatura e cabeçalho secreto**, validar
+  sobre o corpo cru antes do parse, comparar em tempo constante, conferir
+  `clientId` e reler o recurso pela API antes de agir. Na troca de segredo,
+  responder `503` (que é reenviado), não `401`.
+- **Sinal dos valores:** no cartão (`CREDIT`), valor **positivo** é compra e
+  negativo é pagamento/estorno; na conta (`BANK`), negativo é saída. A
+  ingestão normaliza por `tipo_conta` antes de preencher `sentido`.
+
+**Correção de desenho: contagem dupla antes do casamento**
+
+A tabela de 14.5 conta crédito e débito como provisórios na hora. Isso soma duas
+vezes quando o mesmo gasto já está no saldo por um cadastro que ainda não casou:
+
+- assinatura no crédito cadastrada como recorrente cujo valor mudou (câmbio,
+  reajuste) e por isso não casou: provisória **e** recorrente previsto;
+- compra lançada à mão com mais de um candidato (o casamento vira só sugestão):
+  avulso **e** provisória.
+
+**Regra nova:** uma transação de crédito/débito só conta como provisória **se
+não houver nenhum candidato de casamento** (recorrente ainda não pago no ciclo,
+ou avulso parecido sem `transacao_banco_id`). Com candidato, quem já conta é o
+cadastro, e a transação espera revisão em "Para revisar". Entra como caso no
+**Portão 3**.
+
+**Oportunidade registrada (não é escopo agora)**
+
+- `GET /accounts` traz o saldo atual de cada conta. Pode virar a âncora
+  automática de `saldos` (hoje digitada em Configuração) e mostrar de verdade
+  quando a conta entrou no cheque especial (seção 7, juros na projeção).
