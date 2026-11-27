@@ -9,6 +9,15 @@
 --   pendente = -300 + 1000 = 700 -> saldo no fim do ciclo = 1200
 begin;
 
+-- No cloud, `supabase test db --linked` conecta com um usuario temporario
+-- (cli_login_postgres) sem acesso ao schema `extensions`, onde mora o pgTAP:
+-- o Postgres ignora o schema e responde "function plan does not exist".
+-- Assumir `postgres` (o mesmo papel do teste local) resolve; vale so ate o
+-- rollback do fim.
+set role postgres;
+create extension if not exists pgtap with schema extensions;
+set search_path = public, extensions;
+
 select plan(11);
 
 insert into auth.users (id, email)

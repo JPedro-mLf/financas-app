@@ -5,6 +5,15 @@
 -- 2) Um usuario autenticado so ve as proprias linhas, nunca as de outro.
 begin;
 
+-- No cloud, `supabase test db --linked` conecta com um usuario temporario
+-- (cli_login_postgres) sem acesso ao schema `extensions`, onde mora o pgTAP:
+-- o Postgres ignora o schema e responde "function plan does not exist".
+-- Assumir `postgres` (o mesmo papel do teste local) resolve; vale so ate o
+-- rollback do fim.
+set role postgres;
+create extension if not exists pgtap with schema extensions;
+set search_path = public, extensions;
+
 select plan(13);
 
 -- Fixtures: dois usuarios, inseridos como postgres (superusuario bypassa RLS).
@@ -35,7 +44,7 @@ select is((select count(*) from execucoes)::int, 0, 'anon: execucoes vazio');
 select is((select count(*) from descontos_folha)::int, 0, 'anon: descontos_folha vazio');
 select is((select count(*) from saldos)::int, 0, 'anon: saldos vazio');
 
-reset role;
+set role postgres;
 
 -- 2) usuario2 autenticado nao enxerga nada do usuario1.
 set role authenticated;
@@ -45,7 +54,7 @@ select is((select count(*) from categorias)::int, 0, 'usuario2 nao ve categorias
 select is((select count(*) from avulsos)::int, 0, 'usuario2 nao ve avulsos do usuario1');
 select is((select count(*) from config)::int, 1, 'usuario2 ve apenas a propria linha de config, nunca a do usuario1');
 
-reset role;
+set role postgres;
 
 -- 3) usuario1 autenticado enxerga o que e dele.
 set role authenticated;
@@ -54,7 +63,7 @@ set request.jwt.claim.sub = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 select is((select count(*) from categorias)::int, 1, 'usuario1 ve a propria categoria');
 select is((select count(*) from avulsos)::int, 1, 'usuario1 ve o proprio avulso');
 
-reset role;
+set role postgres;
 
 select * from finish();
 

@@ -4,6 +4,15 @@
 -- (calendario real, verificado independentemente da formula em teste).
 begin;
 
+-- No cloud, `supabase test db --linked` conecta com um usuario temporario
+-- (cli_login_postgres) sem acesso ao schema `extensions`, onde mora o pgTAP:
+-- o Postgres ignora o schema e responde "function plan does not exist".
+-- Assumir `postgres` (o mesmo papel do teste local) resolve; vale so ate o
+-- rollback do fim.
+set role postgres;
+create extension if not exists pgtap with schema extensions;
+set search_path = public, extensions;
+
 select plan(23);
 
 -- Fixture: config de um usuario de teste, necessaria para fatura_fecha /

@@ -19,3 +19,19 @@ jobs:
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -o /dev/null
+
+      # Projeto-copia da integracao Open Finance (ESPECIFICACAO.md 14.3). Usa a
+      # chave nova "publishable" (sb_publishable_...), que vai so no cabecalho
+      # apikey. Pula enquanto os secrets nao estiverem cadastrados.
+      - name: Ping Supabase REST API (v2)
+        env:
+          URL_V2: ${{ secrets.SUPABASE_URL_V2 }}
+          KEY_V2: ${{ secrets.SUPABASE_PUBLISHABLE_KEY_V2 }}
+        run: |
+          if [ -z "$URL_V2" ] || [ -z "$KEY_V2" ]; then
+            echo "Secrets do v2 nao cadastrados; pulando."
+            exit 0
+          fi
+          curl -sf -X GET "$URL_V2/rest/v1/categorias?select=id&limit=1" \
+            -H "apikey: $KEY_V2" \
+            -o /dev/null

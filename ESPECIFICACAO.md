@@ -1499,3 +1499,38 @@ data parada no Dashboard não reflete isso). Autorização do MeuPluggy vence em
 contas** (corrente e poupança), sem os cartões: o que se deve no cartão já
 entra pelas faturas futuras. Com a integração, ele pode vir de `GET /accounts`
 (saldo das contas `BANK`).
+
+### 14.18 Fase B — ambiente (andamento, 27/11/2026)
+
+- **Projeto-cópia:** `Finances-DB-v2` (ref `ztuiaulmfqkhygxfnfkx`), região
+  `sa-east-1`. Um primeiro, criado por engano em `us-east-1`, foi apagado vazio
+  e recriado: a região não muda depois de criada.
+- **Pasta de trabalho separada:** o repositório segue ligado (`supabase link`)
+  ao `Finances-DB` de produção; o v2 é operado por `supabase --workdir
+  %USERPROFILE%\.financas\v2 ...`, com cópia de `config.toml`, `migrations/` e
+  `tests/`. Assim nenhum `db push` rotineiro cai no projeto errado. **Antes de
+  cada push no v2, recopiar as migrations do repositório.**
+- **Migrations:** as 17 aplicadas em ordem, sem erro. Estrutura (tabelas, views,
+  funções) idêntica à produção; v2 vazio.
+- **Testes no cloud:** 56/56 no v2. Para rodar no cloud, os testes passaram a
+  fazer `set role postgres` + `create extension if not exists pgtap` + `set
+  search_path` dentro da transação: o `supabase test db --linked` conecta como
+  `cli_login_postgres`, sem acesso ao schema `extensions`, e o Postgres então
+  responde "function plan does not exist". A CLI instala o pgTAP no projeto
+  (fica em `extensions`; inofensivo).
+- **Permissões padrão diferentes (achado de segurança).** Na produção, `anon` tem
+  `INSERT/UPDATE/DELETE/TRUNCATE` em todas as tabelas e views, e
+  `authenticated` tem escrita nas views; no v2 (padrões mais novos do
+  Supabase), `anon` só lê tabelas e `authenticated` só lê views. Nada disso é
+  explorável pela API hoje (a RLS barra escrita sem sessão e o PostgREST não
+  expõe `TRUNCATE`), mas contraria 14.12 ("`anon`: no máximo `SELECT`").
+  **Proposta:** migration de endurecimento nos dois projetos (tirar de `anon`
+  tudo exceto leitura; tirar `TRUNCATE` de todos; views só leitura), com
+  backup antes na produção.
+- **Chaves:** o v2 usa as chaves novas (`sb_publishable_…`/`sb_secret_…`). A
+  `service_role` legacy do v2 foi exibida por engano numa sessão local do
+  Claude Code: **desativar as chaves legacy do v2** no painel.
+- **Keepalive:** `keepalive.yml` ganhou o ping do v2, ativo quando os secrets
+  `SUPABASE_URL_V2` e `SUPABASE_PUBLISHABLE_KEY_V2` existirem no GitHub.
+- **Falta:** usuário e MFA no v2, cópia dos *cadastros* (sem movimentos) da
+  produção e um front-end apontando para o v2.
