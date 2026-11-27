@@ -1340,7 +1340,7 @@ Para o Claude Code não redescobrir a cada tarefa **[verificado]**:
 5. **Modelagem do parcelamento de fatura** (14.10).
 6. **Fase A:** `paymentData`, faturas e `providerId` no item MeuPluggy; como
    aparecem débito automático, compra no débito e pagamento de fatura.
-7. **Resultado do reconhecimento (Fase A):** *preencher aqui antes da Fase C.*
+7. **Resultado do reconhecimento (Fase A):** registrado em 14.17 (27/11/2026).
 
 **Correção a registros anteriores (out/2026).** A nota da remigração v2 na
 seção 11 registra "Financiamento Uno e sua entrada" como pagos por `pix`. O
@@ -1427,3 +1427,70 @@ cadastro, e a transação espera revisão em "Para revisar". Entra como caso no
 - `GET /accounts` traz o saldo atual de cada conta. Pode virar a âncora
   automática de `saldos` (hoje digitada em Configuração) e mostrar de verdade
   quando a conta entrou no cheque especial (seção 7, juros na projeção).
+
+### 14.17 Resultado do reconhecimento — Fase A (27/11/2026)
+
+`integracao/reconhecimento.mjs`, executado uma vez, só leitura. Registra
+apenas contagens e presença de campos (nenhum valor, nome ou documento).
+
+**Itens e conexões.** 5 itens MeuPluggy (Inter, Nubank, PicPay, Bradesco,
+Santander), todos `UPDATED`/`SUCCESS`, sincronizados em 26–27/11 com a próxima
+sincronização automática no dia seguinte: **a API recebe os dados em dia** (a
+data parada no Dashboard não reflete isso). Autorização do MeuPluggy vence em
+**06–07/10/2027**. Cada banco tem conta corrente e cartão, exceto Bradesco
+(corrente + poupança, sem cartão).
+
+| Banco | Conta corrente (12 meses) | Cartão (12 meses) | Faturas |
+|---|---|---|---|
+| Inter | 4 (só dez/2025) | 7 (só dez/2025) | 0 |
+| Nubank | 178 | 616 (parcelas futuras até 09/2027) | 14 |
+| PicPay | 151 | 294 | 13 |
+| Bradesco | 18 (desde 30/07/2026) + poupança 0 | — | — |
+| Santander | 237 | 143 | 13 |
+
+**Respostas às perguntas de 14.13**
+
+1. **`providerId` não vem: 0% em todas as contas** (o proxy MeuPluggy é
+   `isOpenFinance = false`). `providerCode` também 0%. **Consequência:** a
+   chave de deduplicação de 14.7 não pode depender de `provider_id`, e o `id`
+   da Pluggy muda em delete + recreate. Chave adotada: hash de conta + data +
+   valor + descrição + ordinal entre idênticas do mesmo dia (duas compras
+   iguais no mesmo dia são legítimas). Sem webhook, a remoção é detectada pela
+   conferência: transação que some da janela relida vira `removida`; uma com
+   id novo e mesma chave é a mesma transação.
+2. **`operationType` vem pelo proxy** (ao contrário do esperado), com valores
+   úteis: conta — `PIX`, `TRANSFERENCIA_MESMA_INSTITUICAO`, `FOLHA_PAGAMENTO`,
+   `ENCARGOS_JUROS_CHEQUE_ESPECIAL`, `CARTAO`, `OPERACAO_CREDITO`,
+   `RESGATE_APLIC_FINANCEIRA`, `RENDIMENTO_APLIC_FINANCEIRA`, `BOLETO`,
+   `OUTROS`; cartão — `PAGAMENTO` (compra), `PAGAMENTO_FATURA`,
+   `OPERACOES_CREDITO_CONTRATADAS_CARTAO`, `TARIFA`, `ESTORNO`, `OUTROS`.
+   **`OUTROS` é frequente** (PicPay: 92 de 151 na conta, 126 de 294 no cartão),
+   então a classificação de 14.5 não pode contar só com `operationType`.
+3. **`paymentData` vem em 100% das transações de conta corrente**, com
+   documento do recebedor em 66–94% e do pagador em 72–99%: a detecção de
+   transferência própria (14.6) é viável. No cartão, praticamente ausente.
+4. **Faturas (`/bills`) vêm** para Nubank, PicPay e Santander, com `dueDate` e
+   mínimo em 100%, `payments` em 92–100% e `financeCharges` em 57–100%: a
+   conciliação pago × devido (14.10) é viável.
+5. **Parcelas:** `installmentNumber`/`totalInstallments` em 20–35% das
+   transações de cartão; `paymentType` (`SINGLE`/`INSTALLMENT`) em 42–100%;
+   `billForecastDate` em ~100%; `billId` em 84–100%. **O Nubank posta todas as
+   parcelas futuras de uma vez** (datas até 09/2027); Santander e PicPay não
+   passam do mês corrente.
+6. **Juros reais de cheque especial aparecem como `ENCARGOS_JUROS_CHEQUE_ESPECIAL`**
+   (42 lançamentos no Santander, 1 no Bradesco): o realizado chega sozinho, e
+   dá para comparar a taxa efetiva com `config.taxa_cheque_especial`.
+
+**Pontos a verificar com o usuário**
+
+- **Inter** só tem lançamentos de dez/2025: conta sem uso ou conexão que parou?
+- Conta corrente do **Nubank e do Santander**: última transação em 13/11,
+  embora sincronizadas em 26–27/11. Confirmar no app do banco se houve
+  movimento depois disso (atraso do banco no Open Finance ou falta de dados).
+- `OPERACOES_CREDITO_CONTRATADAS_CARTAO` é frequente no Nubank (135): entender
+  o que são (parcelamento de fatura? compra parcelada?) antes do motor de 14.6.
+
+**Decisão [decidido]:** o "Saldo de hoje" (seção 7) é a **soma de todas as
+contas** (corrente e poupança), sem os cartões: o que se deve no cartão já
+entra pelas faturas futuras. Com a integração, ele pode vir de `GET /accounts`
+(saldo das contas `BANK`).
