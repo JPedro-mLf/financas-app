@@ -1,9 +1,16 @@
 import { supabase } from '../lib/supabaseClient';
-import { formatBRL, rotuloCiclo, todayISO } from '../lib/format';
+import { formatBRL, formatData, rotuloCiclo, todayISO } from '../lib/format';
 
 type Config = { dia_fechamento: number; dia_vencimento: number; horizonte_meses: number; taxa_cheque_especial: number };
 type Categoria = { id: string; nome: string; tipo: 'receita' | 'despesa'; ativa: boolean };
 type Desconto = { id: string; descricao: string; percentual: number | null; valor_fixo: number | null };
+type Ancora = {
+  ciclo: string;
+  data_apuracao: string | null;
+  valor_apurado: number;
+  pendente: number;
+  saldo_fim_ciclo: number;
+};
 
 export async function renderConfiguracao(page: HTMLElement): Promise<void> {
   page.innerHTML = `<p>Carregando configuracao...</p>`;
@@ -16,9 +23,7 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
     supabase.from('categorias').select('id, nome, tipo, ativa').order('nome'),
     supabase.from('descontos_folha').select('id, descricao, percentual, valor_fixo').order('descricao'),
     supabase.auth.mfa.listFactors(),
-    cicloAtual
-      ? supabase.from('saldos').select('valor_apurado').eq('ciclo', cicloAtual).maybeSingle()
-      : Promise.resolve({ data: null }),
+    supabase.from('v_ancora_saldo').select('ciclo, data_apuracao, valor_apurado, pendente, saldo_fim_ciclo').maybeSingle(),
   ]);
 
   const userId = userRes.data.user?.id;
@@ -26,7 +31,7 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
   const categorias = (categoriasRes.data ?? []) as Categoria[];
   const descontos = (descontosRes.data ?? []) as Desconto[];
   const mfaAtivo = (factorsRes.data?.totp ?? []).some((f) => f.status === 'verified');
-  const saldoAtual = saldoRes.data as { valor_apurado: number } | null;
+  const ancora = saldoRes.data as Ancora | null;
 
   page.innerHTML = `
     <h1>Configuracao</h1>
@@ -86,13 +91,14 @@ export async function renderConfiguracao(page: HTMLElement): Promise<void> {
     </section>
 
     <section class="cartao">
-      <h2>Saldo apurado</h2>
-      <p>Usado como ponto de partida da previsao do horizonte (tela Resumo).
-        Registre aqui o saldo real da sua conta no ciclo atual${cicloAtual ? ` — ${rotuloCiclo(cicloAtual)}` : ''}.</p>
-      ${saldoAtual ? `<p>Saldo ja registrado neste ciclo: <strong>${formatBRL(saldoAtual.valor_apurado)}</strong></p>` : ''}
+      <h2>Saldo atual</h2>
+      <p>Ponto de partida da previsao (tela Resumo). Digite o saldo que o app do
+        banco mostra hoje, em qualquer dia: a previsao soma so o que ainda nao
+        passou pela conta neste ciclo${cicloAtual ? ` (${rotuloCiclo(cicloAtual)})` : ''}.</p>
+      ${ancora ? renderAncora(ancora) : ''}
       <form id="form-saldo" class="form">
-        <label>Saldo apurado (R$)
-          <input type="number" name="valor_apurado" step="0.01" value="${saldoAtual?.valor_apurado ?? ''}" required>
+        <label>Saldo de hoje (R$)
+          <input type="number" name="valor_apurado" step="0.01" required>
         </label>
         <button type="submit" ${cicloAtual ? '' : 'disabled'}>Salvar</button>
         <p class="msg" id="msg-saldo" hidden></p>
@@ -203,12 +209,41 @@ function wireSaldoForm(page: HTMLElement, userId: string | undefined, cicloAtual
       user_id: userId,
       ciclo: cicloAtual,
       valor_apurado: Number(dados.get('valor_apurado')),
+      data_apuracao: todayISO(),
     });
 
+    if (error) {
+      msg.hidden = false;
+      msg.textContent = `Erro: ${error.message}`;
+      msg.className = 'msg erro';
+      return;
+    }
+
+    // O que ainda falta passar pela conta e calculado no banco (v_ancora_saldo).
+    const { data } = await supabase
+      .from('v_ancora_saldo')
+      .select('ciclo, data_apuracao, valor_apurado, pendente, saldo_fim_ciclo')
+      .maybeSingle();
+    page.querySelector('#ancora-info')?.remove();
+    if (data) form.insertAdjacentHTML('beforebegin', renderAncora(data as Ancora));
+    form.reset();
     msg.hidden = false;
-    msg.textContent = error ? `Erro: ${error.message}` : 'Salvo.';
-    msg.className = error ? 'msg erro' : 'msg sucesso';
+    msg.textContent = 'Salvo.';
+    msg.className = 'msg sucesso';
   });
+}
+
+function renderAncora(a: Ancora): string {
+  if (!a.data_apuracao) {
+    return `<p id="ancora-info">Ultimo saldo registrado (${rotuloCiclo(a.ciclo)}, fim do ciclo):
+      <strong>${formatBRL(a.valor_apurado)}</strong></p>`;
+  }
+  return `
+    <div id="ancora-info">
+      <p>Registrado em ${formatData(a.data_apuracao)}: <strong>${formatBRL(a.valor_apurado)}</strong></p>
+      <p>Ainda vai passar pela conta ate o fim do ciclo: ${formatBRL(a.pendente)}</p>
+      <p>Saldo esperado no fim de ${rotuloCiclo(a.ciclo)}: <strong>${formatBRL(a.saldo_fim_ciclo)}</strong></p>
+    </div>`;
 }
 
 function wireMfaEnroll(page: HTMLElement): void {

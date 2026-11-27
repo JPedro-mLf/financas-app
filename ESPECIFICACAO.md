@@ -403,6 +403,26 @@ Decisões de design tomadas na implementação:
   registrado. Na pratica, para o primeiro cadastro, usar o saldo real do dia
   já é uma aproximação razoável; ela só fica exata a partir do próximo ciclo,
   quando a conciliação for atualizada de novo logo apos o salário cair.
+
+  > **Correção (nov/2026): saldo apurado de hoje, em qualquer dia.** O texto
+  > acima dizia "início do ciclo", mas a fórmula tratava `valor_apurado` como
+  > o saldo do **fim** do ciclo (os lançamentos do próprio ciclo da âncora não
+  > eram somados), o que só batia se o usuário registrasse no dia exato. Agora
+  > `saldos.data_apuracao` guarda o dia da leitura e a view `v_ancora_saldo`
+  > calcula `saldo_fim_ciclo = valor_apurado + pendente`, onde *pendente* é o
+  > que, naquele dia, ainda não passou pela conta no ciclo. A régua é a nova
+  > coluna `v_fluxo.data_caixa`, o dia em que o dinheiro de fato se move:
+  > crédito → vencimento da fatura; avulso → data do lançamento; folha →
+  > início do ciclo; parcela fora do crédito → mesmo dia do mês da compra,
+  > dentro do ciclo (`dia_no_ciclo`); recorrente → data em que foi pago, ou o
+  > dia previsto se não foi confirmado. Recorrente não confirmado cujo dia já
+  > passou conta como já ocorrido: o saldo do banco já o reflete (a regra
+  > anterior, "pendente até marcar pago", inflava a previsão com salários que
+  > já tinham caído). Saldos antigos, sem data, mantêm o significado de fim de
+  > ciclo. Na tela Configuração o campo virou **"Saldo de hoje"** e mostra o
+  > pendente e o saldo esperado no fim do ciclo. Teste:
+  > `04_saldo_apurado_de_hoje.sql`. Combina com a seção 14: o saldo de
+  > `GET /accounts` da Pluggy pode alimentar essa âncora automaticamente.
 - **`v_saldo_acumulado`** generaliza `v_previsao` para qualquer ciclo, não só
   os futuros dentro do horizonte: útil para o Resumo, que deixa navegar para
   meses passados e quer mostrar "quanto eu teria acumulado até aqui", não só
