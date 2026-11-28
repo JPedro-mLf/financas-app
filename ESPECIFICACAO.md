@@ -1532,5 +1532,19 @@ entra pelas faturas futuras. Com a integração, ele pode vir de `GET /accounts`
   Claude Code: **desativar as chaves legacy do v2** no painel.
 - **Keepalive:** `keepalive.yml` ganhou o ping do v2, ativo quando os secrets
   `SUPABASE_URL_V2` e `SUPABASE_PUBLISHABLE_KEY_V2` existirem no GitHub.
-- **Falta:** usuário e MFA no v2, cópia dos *cadastros* (sem movimentos) da
-  produção e um front-end apontando para o v2.
+- **Front-end v2:** publicado em `/financas-app/v2/` pelo mesmo `deploy.yml`
+  (build com `VITE_AMBIENTE=v2`), com faixa "v2 · teste" em todas as telas. O
+  service worker de produção ignora navegações de `/v2/`.
+- **Cópia completa da produção (28/11/2026) [decidido].** Em vez de copiar só
+  cadastros (14.3), o usuário decidiu copiar **tudo**: o usuário (mesmo e-mail,
+  senha e MFA: `auth.users`, `auth.identities`, `auth.mfa_factors`, sem sessões
+  nem tokens) e todos os dados de `public`, lançamentos inclusive. Conferido:
+  contagens iguais nas 11 tabelas e impressão digital (md5) idêntica de
+  `v_fluxo` e `v_saldo_acumulado` nos dois projetos.
+- **Plano de importação [decidido]: 12 meses da Pluggy sobre a cópia completa,
+  em caráter de teste.** Backup do v2 antes de qualquer dado da Pluggy em
+  `financas-backups/2026-11-28_v2_antes_da_pluggy/`. Quando a tela "Para
+  revisar" estiver funcional, **o Claude avisa e aguarda**; o usuário avalia se
+  dá para revisar o volume. Se não der: restaurar esse backup e importar só a
+  partir de uma **data de virada** (o histórico fica como foi lançado à mão).
+  Isso substitui a pendência 4 de 14.15.
