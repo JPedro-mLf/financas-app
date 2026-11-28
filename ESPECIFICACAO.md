@@ -1655,3 +1655,39 @@ sem a integração (ver o aviso no fim desta seção).
 - **Pendente:** "Criar parcelamento" a partir de uma compra parcelada sem
   cadastro (14.6), banner de saúde da conexão no Resumo (14.9) e Fase F
   (faturas). Avaliação do volume de revisão pelo usuário (decisão de 14.18).
+
+### 14.21 Ajustes depois da primeira revisão real (28/11/2026) [decidido]
+
+Migration `20261128000006_revisao_ajustes`, ingestão e tela Revisar atualizadas;
+aplicado no local e no v2 (backup antes em
+`financas-backups/2026-11-28_v2_antes_ajustes_revisao/`). 117/117 testes.
+
+1. **Parceladas do banco não contam no saldo.** Os parcelamentos cadastrados à
+   mão são a fonte (valores do banco variam com juros e cada banco posta de um
+   jeito). `eh_parcelada()`: cartão com `parcela_total > 1` ou `paymentType =
+   INSTALLMENT`; parcelas só no texto ("6/10") são lidas por
+   `parcela_do_texto()` (data "21/11" não conta). Filtro próprio "Parceladas"
+   (`v_parceladas_banco`): "confere com: <parcelamento>" quando casa, ou "sem
+   parcelamento cadastrado" (lembrete para cadastrar na aba Parcelar).
+2. **Nome no banco aprendido** (`recorrentes.nome_banco`): o primeiro vínculo
+   manual a um recorrente memoriza a descrição normalizada do banco; depois o
+   motor casa sozinho por ela, aceitando valor até 20% diferente. Caso real:
+   Apple cadastrada 19,99, cobrada 19,90 como "APPLE.COM/BILL" (semelhança 0,18).
+3. **Estimado = envelope da categoria** (`v_recorrentes_ciclo`): ciclo atual e
+   futuros contam `max(previsto − gasto real da categoria no ciclo, 0)` (gasto =
+   avulsos, parcelas e provisórias do banco com categoria); ciclo passado sem
+   execução zera (status cancelado). Estimados não casam com transações
+   individuais. "Combustível Mensal" passou a estimado no v2 (categoria
+   Transporte: Uber e afins também consomem o envelope).
+4. **Pix/transferência com terceiro identificado conta na hora**
+   (`conta_antes_de_revisar()`); `transferencia_propria` tem 3 estados (true =
+   para si, nunca conta; false = terceiro; null = desconhecido, fora do saldo).
+   **Depende de `OWNER_CPF`** (ainda não cadastrado): sem ele, tudo é
+   desconhecido e os Pix seguem fora do saldo.
+5. **Avulsos copiados apagados no v2:** 119 (R$ 11.388,22) dentro da janela da
+   Pluggy (desde 28/11/2025), que não casaram com nada. Ficaram: 194 anteriores à
+   janela, 1 de dinheiro/folha, 138 casados.
+
+Depois da ressincronização: 102 parceladas conferem, 219 sem cadastro; para
+revisar, 513 contam no saldo, 565 fora (Pix sem CPF), 15 com sugestão; casadas:
+138 lançamentos, 22 recorrentes, 65 pagamentos de fatura.

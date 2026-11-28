@@ -13,7 +13,7 @@ set role postgres;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
 
-select plan(30);
+select plan(43);
 
 insert into auth.users (id, email) values
   ('66666666-6666-6666-6666-666666666666', 'teste-contagem@local.test'),
@@ -38,8 +38,8 @@ select x.id::uuid, '66666666-6666-6666-6666-666666666666', 'p-' || x.k, 'k-' || 
        x.s::tipo_lancamento, x.descr, x.op, x.meio::meio_pagamento, x.pn, x.pt, x.dco::date, x.tp, x.est::estado_banco
 from (values
   ('b0000000-0000-0000-0000-000000000001', 't1',  'cartao', 'CREDIT', '2030-03-10', 100.00, 'despesa', 'LOJA X',              'PAGAMENTO',        'credito', null::int, null::int, null, false, 'para_revisar'),
-  ('b0000000-0000-0000-0000-000000000002', 't2',  'conta',  'BANK',   '2030-04-10',  50.00, 'despesa', 'PIX ENVIADO FULANO',  'PIX',              'pix',     null, null, null, false, 'para_revisar'),
-  ('b0000000-0000-0000-0000-000000000003', 't3',  'conta',  'BANK',   '2030-04-11',1000.00, 'receita', 'PIX RECEBIDO',        'PIX',              'pix',     null, null, null, false, 'para_revisar'),
+  ('b0000000-0000-0000-0000-000000000002', 't2',  'conta',  'BANK',   '2030-04-10',  50.00, 'despesa', 'PIX ENVIADO FULANO',  'PIX',              'pix',     null, null, null, null,  'para_revisar'),
+  ('b0000000-0000-0000-0000-000000000003', 't3',  'conta',  'BANK',   '2030-04-11',1000.00, 'receita', 'PIX RECEBIDO',        'PIX',              'pix',     null, null, null, null,  'para_revisar'),
   ('b0000000-0000-0000-0000-000000000004', 't4',  'cartao', 'CREDIT', '2030-03-12',  80.00, 'despesa', 'SUPERMERCADO',        'PAGAMENTO',        'credito', null, null, null, false, 'para_revisar'),
   ('b0000000-0000-0000-0000-000000000005', 't5',  'cartao', 'CREDIT', '2030-03-15',  30.00, 'despesa', 'DROGARIA',            'PAGAMENTO',        'credito', null, null, null, false, 'para_revisar'),
   ('b0000000-0000-0000-0000-000000000006', 't6',  'cartao', 'CREDIT', '2030-04-03', 500.00, 'receita', 'PAGAMENTO RECEBIDO',  'PAGAMENTO_FATURA', 'credito', null, null, null, false, 'para_revisar'),
@@ -79,11 +79,12 @@ select is((select jsonb_array_length(candidatos) from transacoes_bancarias where
   2, '...e vira sugestao com os dois candidatos');
 
 -- Quem conta como provisorio: so cartao/debito, sem candidato, nao proprio.
-select is(pg_temp.provisorias(), 'LOJA X,RESTAURANTE,TV LOJA 1/2',
-  'provisorias: compras no cartao sem candidato (nao: Pix, entrada, com candidato, liquidacao, transferencia propria, removida)');
+select is(pg_temp.provisorias(), 'LOJA X,RESTAURANTE',
+  'provisorias: compras no cartao sem candidato (nao: parcelada, Pix sem terceiro identificado, com candidato, liquidacao, transferencia propria, removida)');
 
--- Total de abril/2030: manuais (80 + 30 + 30) + provisorias (100 + 60 + 200).
-select is(pg_temp.total('2030-04-01'), -500.00::numeric,
+-- Total de abril/2030: manuais (80 + 30 + 30) + provisorias (100 + 60). A
+-- parcela da TV nao conta: parceladas vem so dos parcelamentos cadastrados.
+select is(pg_temp.total('2030-04-01'), -300.00::numeric,
   'abril: cada gasto conta uma vez (o vinculado conta so pelo avulso manual)');
 
 -- Confirmar uma compra provisoria: troca de caminho, o total nao muda.
@@ -91,8 +92,8 @@ set role authenticated;
 set request.jwt.claim.sub = '66666666-6666-6666-6666-666666666666';
 select confirmar_transacao('b0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001');
 set role postgres;
-select is(pg_temp.total('2030-04-01'), -500.00::numeric, 'confirmar compra provisoria nao soma duas vezes');
-select is(pg_temp.provisorias(), 'RESTAURANTE,TV LOJA 1/2', '...ela sai das provisorias');
+select is(pg_temp.total('2030-04-01'), -300.00::numeric, 'confirmar compra provisoria nao soma duas vezes');
+select is(pg_temp.provisorias(), 'RESTAURANTE', '...ela sai das provisorias');
 select is((select count(*)::int from v_fluxo where descricao = 'LOJA X' and user_id = '66666666-6666-6666-6666-666666666666'),
   1, '...e aparece uma unica vez no fluxo, como avulso');
 
@@ -100,13 +101,13 @@ select is((select count(*)::int from v_fluxo where descricao = 'LOJA X' and user
 set role authenticated;
 select confirmar_transacao('b0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000001', null, 'Pix pro Fulano');
 set role postgres;
-select is(pg_temp.total('2030-04-01'), -550.00::numeric, 'Pix confirmado passa a contar (50), uma vez');
+select is(pg_temp.total('2030-04-01'), -350.00::numeric, 'Pix confirmado passa a contar (50), uma vez');
 
 -- Ignorar uma provisoria: deixa de contar.
 set role authenticated;
 select ignorar_transacao('b0000000-0000-0000-0000-000000000008');
 set role postgres;
-select is(pg_temp.total('2030-04-01'), -490.00::numeric, 'compra ignorada deixa de contar (60)');
+select is(pg_temp.total('2030-04-01'), -290.00::numeric, 'compra ignorada deixa de contar (60)');
 
 -- Cadastrar o parcelamento depois e re-casar: a parcela troca de caminho.
 insert into parcelamentos (id, user_id, descricao, categoria_id, meio_pagamento, data_compra, valor_parcela, num_parcelas)
@@ -115,7 +116,7 @@ values ('d0000000-0000-0000-0000-000000000009', '66666666-6666-6666-6666-6666666
 select casar_transacoes_bancarias('66666666-6666-6666-6666-666666666666');
 select is(pg_temp.estado('b0000000-0000-0000-0000-000000000009'), 'vinculada/parcelamento',
   'parcela casa com o parcelamento cadastrado depois');
-select is(pg_temp.total('2030-04-01'), -490.00::numeric, 'abril nao muda: a parcela agora conta pelo parcelamento, nao em dobro');
+select is(pg_temp.total('2030-04-01'), -490.00::numeric, 'abril ganha a 1a parcela pelo cadastro (a do banco nunca contou): uma vez so');
 select is(pg_temp.total('2030-05-01'), -200.00::numeric, 'maio ganha a 2a parcela, projetada pelo cadastro');
 
 -- Desfazer a confirmacao: o avulso criado some e a compra volta a provisoria.
@@ -162,6 +163,73 @@ select is((select count(*)::int from v_fluxo
   1, 'a assinatura aparece uma vez no ciclo (pelo recorrente, nao provisoria)');
 select is((select status::text from execucoes where recorrente_id = 'e0000000-0000-0000-0000-000000000001'), 'pago',
   'execucao do ciclo marcada como paga');
+
+-- ===== Ajustes da revisao com dados reais (migration 20261128000006)
+
+-- Pix com terceiro identificado conta na hora; para si mesmo, nao.
+insert into transacoes_bancarias (id, user_id, pluggy_id, chave_dedupe, conta_pluggy_id, tipo_conta, data, valor, sentido, descricao, tipo_operacao, meio_inferido, transferencia_propria)
+values
+  ('b0000000-0000-0000-0000-000000000013', '66666666-6666-6666-6666-666666666666', 'p-t13', 'k-t13', 'conta', 'BANK', '2030-04-15', 25, 'despesa', 'PIX ENVIADO TERCEIRO', 'PIX', 'pix', false),
+  ('b0000000-0000-0000-0000-000000000014', '66666666-6666-6666-6666-666666666666', 'p-t14', 'k-t14', 'conta', 'BANK', '2030-04-15', 40, 'despesa', 'PIX PARA MIM', 'PIX', 'pix', true),
+  ('b0000000-0000-0000-0000-000000000015', '66666666-6666-6666-6666-666666666666', 'p-t15', 'k-t15', 'conta', 'BANK', '2030-04-16', 70, 'receita', 'PIX RECEBIDO TERCEIRO', 'PIX', 'pix', false);
+select casar_transacoes_bancarias('66666666-6666-6666-6666-666666666666');
+select is(pg_temp.provisorias(), 'LOJA X,PIX ENVIADO TERCEIRO,PIX RECEBIDO TERCEIRO,SUPERMERCADO',
+  'Pix com terceiro identificado conta (entrada e saida); para si mesmo e desconhecido, nao');
+select is(pg_temp.total('2030-04-01'), -445.00::numeric, 'abril: -25 e +70 dos Pix com terceiros, uma vez cada');
+
+-- Parceladas: nunca contam pelo banco; ficam so para conferencia.
+select is((parcela_do_texto('SERGIO S 6/10')).total, 10, 'parcela no texto: 6/10 -> total 10');
+select is((parcela_do_texto('PAGTO 21/11/2026')).total, null, 'data no texto (21/11) nao vira parcela');
+select is((parcela_do_texto('LOJA 1/1')).total, null, 'compra 1/1 nao e parcelada');
+insert into transacoes_bancarias (id, user_id, pluggy_id, chave_dedupe, conta_pluggy_id, tipo_conta, data, valor, sentido, descricao, tipo_operacao, meio_inferido, tipo_pagamento)
+values ('b0000000-0000-0000-0000-000000000016', '66666666-6666-6666-6666-666666666666', 'p-t16', 'k-t16', 'cartao', 'CREDIT',
+        '2030-03-08', 99, 'despesa', 'GELADEIRA', 'PAGAMENTO', 'credito', 'INSTALLMENT');
+select casar_transacoes_bancarias('66666666-6666-6666-6666-666666666666');
+select is((select count(*)::int from v_para_revisar where id = 'b0000000-0000-0000-0000-000000000016'), 0,
+  'parcelada sem cadastro nao aparece na lista comum nem conta no saldo');
+select is((select situacao from v_parceladas_banco where id = 'b0000000-0000-0000-0000-000000000016'), 'sem_cadastro',
+  '...aparece no filtro Parceladas como "sem cadastro"');
+
+-- Nome no banco aprendido: Apple cadastrada 19,99, cobrada 19,90 como APPLE.COM/BILL.
+insert into recorrentes (id, user_id, descricao, tipo, categoria_id, meio_pagamento, valor_previsto, dia_referencia, data_inicio)
+values ('e0000000-0000-0000-0000-000000000002', '66666666-6666-6666-6666-666666666666', 'Assinatura Apple Layanne', 'despesa',
+        'c0000000-0000-0000-0000-000000000002', 'credito', 19.99, 21, current_date - 90);
+insert into transacoes_bancarias (id, user_id, pluggy_id, chave_dedupe, conta_pluggy_id, tipo_conta, data, valor, sentido, descricao, tipo_operacao, meio_inferido)
+values ('b0000000-0000-0000-0000-000000000017', '66666666-6666-6666-6666-666666666666', 'p-t17', 'k-t17', 'cartao', 'CREDIT',
+        current_date, 19.90, 'despesa', 'APPLE.COM/BILL', 'PAGAMENTO', 'credito');
+select casar_transacoes_bancarias('66666666-6666-6666-6666-666666666666');
+select is(pg_temp.estado('b0000000-0000-0000-0000-000000000017'), 'para_revisar',
+  'Apple: valor diferente e descricao pouco parecida -- nao casa sozinha na primeira vez');
+set role authenticated;
+select vincular_transacao('b0000000-0000-0000-0000-000000000017', 'recorrente', 'e0000000-0000-0000-0000-000000000002');
+set role postgres;
+insert into transacoes_bancarias (id, user_id, pluggy_id, chave_dedupe, conta_pluggy_id, tipo_conta, data, valor, sentido, descricao, tipo_operacao, meio_inferido)
+values ('b0000000-0000-0000-0000-000000000018', '66666666-6666-6666-6666-666666666666', 'p-t18', 'k-t18', 'cartao', 'CREDIT',
+        current_date + 31, 19.90, 'despesa', 'APPLE.COM/BILL', 'PAGAMENTO', 'credito');
+select casar_transacoes_bancarias('66666666-6666-6666-6666-666666666666');
+select is((select nome_banco from recorrentes where id = 'e0000000-0000-0000-0000-000000000002'), 'apple com bill',
+  'o vinculo manual ensinou o nome no banco');
+select is(pg_temp.estado('b0000000-0000-0000-0000-000000000018'), 'vinculada/execucao',
+  'no mes seguinte a Apple casa sozinha pelo nome, mesmo com valor diferente');
+
+-- Envelope do estimado: conta so o que falta gastar na categoria.
+insert into categorias (id, user_id, nome, tipo)
+values ('c0000000-0000-0000-0000-000000000003', '66666666-6666-6666-6666-666666666666', 'Transporte', 'despesa');
+insert into recorrentes (id, user_id, descricao, tipo, categoria_id, meio_pagamento, valor_previsto, estimado, dia_referencia, data_inicio)
+values ('e0000000-0000-0000-0000-000000000003', '66666666-6666-6666-6666-666666666666', 'Combustivel', 'despesa',
+        'c0000000-0000-0000-0000-000000000003', 'pix', 350, true, 10, current_date - 100);
+insert into avulsos (user_id, data, descricao, tipo, categoria_id, meio_pagamento, valor)
+values ('66666666-6666-6666-6666-666666666666', current_date, 'Posto', 'despesa', 'c0000000-0000-0000-0000-000000000003', 'pix', 120);
+select is((select valor from v_recorrentes_ciclo where origem_id = 'e0000000-0000-0000-0000-000000000003' and ciclo = ciclo(current_date)),
+  230.00::numeric, 'envelope no ciclo atual: 350 previstos - 120 ja gastos na categoria');
+select is((select valor || '/' || status from v_recorrentes_ciclo
+           where origem_id = 'e0000000-0000-0000-0000-000000000003'
+             and ciclo = (ciclo(current_date) - interval '1 month')::date),
+  '0.00/cancelado', 'ciclo que ja passou: o que sobrou do envelope zera');
+select is((select valor from v_recorrentes_ciclo
+           where origem_id = 'e0000000-0000-0000-0000-000000000003'
+             and ciclo = (ciclo(current_date) + interval '1 month')::date),
+  350.00::numeric, 'ciclo futuro: envelope cheio');
 
 -- Seguranca: outro usuario nao age sobre transacao alheia.
 set role authenticated;

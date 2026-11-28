@@ -49,13 +49,32 @@ type ItemRevisado = {
 
 type Categoria = { id: string; nome: string; tipo: 'receita' | 'despesa' };
 
-type Filtro = 'todas' | 'no_saldo' | 'fora' | 'sugestao' | 'revisadas';
+type Filtro = 'todas' | 'no_saldo' | 'fora' | 'sugestao' | 'parceladas' | 'revisadas';
+
+// Parcelada vinda do banco (ESPECIFICACAO.md 14.21): nunca conta no saldo por
+// aqui -- a fonte e o parcelamento cadastrado a mao. O filtro so serve para
+// conferir que a compra ja foi lancada e que o valor bate.
+type ItemParcelado = {
+  id: string;
+  data: string;
+  valor: number;
+  descricao: string;
+  parcela_numero: number | null;
+  parcela_total: number | null;
+  banco: string | null;
+  parcelamento_descricao: string | null;
+  parcelamento_valor: number | null;
+  parcelamento_total: number | null;
+  situacao: 'confere' | 'sem_cadastro' | 'ignorada';
+  candidatos: Candidato[];
+};
 
 const FILTROS: { id: Filtro; rotulo: string }[] = [
   { id: 'todas', rotulo: 'Todas' },
   { id: 'no_saldo', rotulo: 'Contam no saldo' },
   { id: 'fora', rotulo: 'Fora do saldo' },
   { id: 'sugestao', rotulo: 'Com sugestao' },
+  { id: 'parceladas', rotulo: 'Parceladas' },
   { id: 'revisadas', rotulo: 'Revisadas' },
 ];
 
@@ -90,7 +109,7 @@ export async function renderRevisar(page: HTMLElement): Promise<void> {
 async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Promise<void> {
   page.innerHTML = `<p>Carregando...</p>`;
 
-  const [resumoRes, itensRes, revisadasRes, categoriasRes, periodo] = await Promise.all([
+  const [resumoRes, itensRes, revisadasRes, categoriasRes, periodo, parceladasRes] = await Promise.all([
     supabase.from('v_resumo_banco').select('itens_para_revisar, valor_provisorio_no_saldo, valor_fora_do_saldo').maybeSingle(),
     supabase
       .from('v_para_revisar')
@@ -107,10 +126,17 @@ async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Pr
       : Promise.resolve({ data: [], error: null }),
     supabase.from('categorias').select('id, nome, tipo').eq('ativa', true).order('nome'),
     periodoDoCiclo(ciclo),
+    supabase
+      .from('v_parceladas_banco')
+      .select('id, data, valor, descricao, parcela_numero, parcela_total, banco, parcelamento_descricao, parcelamento_valor, parcelamento_total, situacao, candidatos')
+      .eq('ciclo', ciclo)
+      .order('situacao', { ascending: false })
+      .order('data'),
   ]);
 
-  if (resumoRes.error || itensRes.error || revisadasRes.error || categoriasRes.error) {
-    const msg = resumoRes.error?.message ?? itensRes.error?.message ?? revisadasRes.error?.message ?? categoriasRes.error?.message;
+  if (resumoRes.error || itensRes.error || revisadasRes.error || categoriasRes.error || parceladasRes.error) {
+    const msg = resumoRes.error?.message ?? itensRes.error?.message ?? revisadasRes.error?.message
+      ?? categoriasRes.error?.message ?? parceladasRes.error?.message;
     page.innerHTML = `<p class="msg erro">Erro ao carregar: ${msg}</p>`;
     return;
   }
@@ -118,6 +144,8 @@ async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Pr
   const resumo = resumoRes.data as { itens_para_revisar: number; valor_provisorio_no_saldo: number; valor_fora_do_saldo: number } | null;
   const todos = (itensRes.data ?? []) as ItemRevisar[];
   const categorias = (categoriasRes.data ?? []) as Categoria[];
+  const parceladas = (parceladasRes.data ?? []) as ItemParcelado[];
+  const semCadastro = parceladas.filter((p) => p.situacao === 'sem_cadastro').length;
   const itens = todos.filter((i) =>
     filtro === 'todas' ? true
     : filtro === 'no_saldo' ? i.conta_no_saldo
@@ -142,13 +170,17 @@ async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Pr
 
     <div class="filtros">
       ${FILTROS.map((f) => `<button type="button" class="chip ${f.id === filtro ? 'ativo' : ''}" data-filtro="${f.id}">${f.rotulo}${
-        f.id === 'revisadas' ? '' : ` (${contar(todos, f.id)})`
+        f.id === 'revisadas' ? ''
+          : f.id === 'parceladas' ? ` (${semCadastro} sem cadastro)`
+          : ` (${contar(todos, f.id)})`
       }</button>`).join('')}
     </div>
 
     ${
       filtro === 'revisadas'
         ? renderRevisadas((revisadasRes.data ?? []) as ItemRevisado[])
+        : filtro === 'parceladas'
+        ? renderParceladas(parceladas)
         : itens.length === 0
           ? '<p class="msg">Nada para revisar neste filtro e ciclo.</p>'
           : `<ul class="lista-ciclo lista-revisar">${itens.map((i) => renderItem(i, categorias)).join('')}</ul>`
@@ -234,6 +266,56 @@ function rotuloCandidato(c: Candidato): string {
     c.valor != null ? formatBRL(c.valor) : null,
     c.data ? formatData(c.data) : c.ciclo ? rotuloCiclo(c.ciclo) : null,
   ].filter(Boolean).join(' · ');
+}
+
+function renderParceladas(itens: ItemParcelado[]): string {
+  if (itens.length === 0) return '<p class="msg">Nenhuma parcela do banco neste ciclo.</p>';
+  return `
+    <p class="msg">Parcelas que o banco mostrou. Nao contam no saldo por aqui: quem conta e o
+      parcelamento que voce cadastrou. Use esta lista so para conferir.</p>
+    <ul class="lista-ciclo lista-revisar">
+      ${itens.map((i) => {
+        const parcela = i.parcela_total ? `parcela ${i.parcela_numero ?? '?'}/${i.parcela_total}` : 'parcelada';
+        const situacao = i.situacao === 'confere'
+          ? `<span class="selo selo-confere">confere com: ${escapar(i.parcelamento_descricao ?? '')}${
+              i.parcelamento_valor != null ? ` (${formatBRL(i.parcelamento_valor)} x ${i.parcelamento_total})` : ''
+            }</span>`
+          : i.situacao === 'ignorada'
+            ? '<span class="selo">ignorada</span>'
+            : '<span class="selo selo-saldo">sem parcelamento cadastrado</span>';
+        return `
+          <li data-id="${i.id}">
+            <div class="linha-topo">
+              <span>${escapar(i.descricao)}</span>
+              <span class="valor-despesa">- ${formatBRL(i.valor)}</span>
+            </div>
+            <p class="linha-meta">${escapar([formatData(i.data), i.banco, parcela].filter(Boolean).join(' · '))} ${situacao}</p>
+            ${
+              i.situacao === 'sem_cadastro'
+                ? `${
+                    i.candidatos.length > 0
+                      ? `<div class="candidatos">
+                          <p class="msg">E um destes parcelamentos?</p>
+                          ${i.candidatos.map((c, n) => `
+                            <div class="candidato">
+                              <span>${escapar(rotuloCandidato(c))}</span>
+                              <button type="button" class="btn-secundario btn-vincular" data-n="${n}">Vincular</button>
+                            </div>`).join('')}
+                        </div>`
+                      : '<p class="msg">Cadastre esta compra na aba Parcelar; na proxima sincronizacao ela passa a "confere".</p>'
+                  }
+                  <div class="linha-controles">
+                    <button type="button" class="btn-secundario btn-ignorar">Ignorar</button>
+                  </div>
+                  <script type="application/json" class="dados-candidatos">${JSON.stringify(i.candidatos).replace(/</g, '\\u003c')}</script>`
+                : i.situacao === 'ignorada'
+                  ? `<div class="linha-controles"><button type="button" class="btn-secundario btn-desfazer">Desfazer</button></div>`
+                  : ''
+            }
+            <p class="msg msg-linha" hidden></p>
+          </li>`;
+      }).join('')}
+    </ul>`;
 }
 
 function renderRevisadas(itens: ItemRevisado[]): string {

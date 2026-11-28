@@ -44,8 +44,19 @@ type TransacaoPluggy = {
     purchaseDate?: string;
     billId?: string;
     billForecastDate?: string;
+    paymentType?: 'SINGLE' | 'INSTALLMENT';
   };
 };
+
+// Mesma regra de parcela_do_texto() (migration 20261128000006): "6/10" com
+// total entre 2 e 48 e numero <= total; "21/11/2026" (data) nao conta.
+function parcelaDoTexto(descricao: string): { numero: number; total: number } | null {
+  const m = /(?:^|\D)(\d{1,2})\/(\d{1,2})(?:\D|$)/.exec(descricao ?? '');
+  if (!m) return null;
+  const numero = Number(m[1]);
+  const total = Number(m[2]);
+  return total >= 2 && total <= 48 && numero >= 1 && numero <= total ? { numero, total } : null;
+}
 
 function env(nome: string): string {
   const v = Deno.env.get(nome);
@@ -179,6 +190,10 @@ Deno.serve(async (req) => {
                   : t.paymentData?.payer?.documentNumber?.value,
               );
               const cc = t.creditCardMetadata;
+              // Parcela escrita so no texto ("SERGIO S 6/10"); mesma regra de
+              // parcela_do_texto() no banco.
+              const parcelaTexto = conta.type === 'CREDIT' && !cc?.totalInstallments
+                ? parcelaDoTexto(t.description) : null;
               linhas.push({
                 user_id: uid,
                 pluggy_id: t.id,
@@ -194,10 +209,14 @@ Deno.serve(async (req) => {
                 status_pluggy: t.status ?? null,
                 bill_id: cc?.billId ?? null,
                 fatura_prevista: cc?.billForecastDate ?? null,
-                parcela_numero: cc?.installmentNumber ?? null,
-                parcela_total: cc?.totalInstallments ?? null,
+                parcela_numero: cc?.installmentNumber ?? parcelaTexto?.numero ?? null,
+                parcela_total: cc?.totalInstallments ?? parcelaTexto?.total ?? null,
                 data_compra_original: cc?.purchaseDate ? cc.purchaseDate.slice(0, 10) : null,
-                transferencia_propria: cpf.length === 11 && docOutroLado === cpf,
+                tipo_pagamento: cc?.paymentType ?? null,
+                // 3 estados (14.21): true = para si; false = terceiro
+                // identificado (Pix conta na hora); null = desconhecido (sem
+                // OWNER_CPF ou sem documento) -- continua fora do saldo.
+                transferencia_propria: cpf.length === 11 && docOutroLado ? docOutroLado === cpf : null,
               });
             });
           }
@@ -218,6 +237,10 @@ Deno.serve(async (req) => {
                   status_pluggy = excluded.status_pluggy,
                   bill_id = excluded.bill_id,
                   fatura_prevista = excluded.fatura_prevista,
+                  tipo_pagamento = excluded.tipo_pagamento,
+                  parcela_numero = excluded.parcela_numero,
+                  parcela_total = excluded.parcela_total,
+                  transferencia_propria = excluded.transferencia_propria,
                   removida_em = null,
                   estado = case when transacoes_bancarias.estado = 'removida'
                                 then 'para_revisar'::estado_banco else transacoes_bancarias.estado end,

@@ -441,3 +441,4 @@ button:disabled {
 .lista-revisar .linha-topo span:last-child {
   white-space: nowrap;
 }
+.selo-confere { color: var(--cor-sucesso); border-color: var(--cor-sucesso); white-space: normal; }
