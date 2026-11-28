@@ -1746,7 +1746,12 @@ Migration `20261128000008_descontos_e_salario_liquido`; teste
   aplicado sobre o bruto ajustado.
 - **Resultado no v2:** 4 salários casados sozinhos (ago–nov/2026); o de
   30/07 (R$ 2.859, provável mês incompleto) virou sugestão.
-- **Produção:** a correção dos descontos depende do `v_fluxo` da integração;
-  levá-la à produção traz junto as migrations da integração (tabelas vazias) e
-  o envelope dos estimados (muda números dos estimados da produção). Aguarda o
-  ok explícito do usuário.
+- **Produção (aplicado em 28/11/2026, com ok explícito do usuário):** backup
+  antes em `financas-backups/2026-11-28_producao_antes_integracao_e_descontos/`;
+  migrations `20261128000002..08` aplicadas (tabelas da integração vazias; aba
+  Revisar segue só no build v2) e "Plano dentário" R$ 14,87 cadastrado. Efeito
+  conferido: a partir de ago/2027 a previsão cai exatamente R$ 362,14/mês (INSS
+  340,49 + seguro 6,78 + dentário 14,87); nos meses anteriores cai mais, porque
+  o saldo passa a ficar negativo e o cheque especial cobra juros (dez/2026 a
+  jun/2027). Privilégios conferidos depois (anon sem escrita nem leitura de
+  views; ninguém com TRUNCATE).
