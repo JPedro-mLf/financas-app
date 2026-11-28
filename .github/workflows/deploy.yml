@@ -40,6 +40,18 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
+      # Mesmo codigo, publicado em /financas-app/v2/ e apontando para o
+      # projeto-copia da integracao Open Finance (ESPECIFICACAO.md 14.18).
+      # Builda depois do de producao, dentro de dist/v2.
+      - name: Build v2
+        working-directory: app
+        run: npx vite build --outDir dist/v2 --emptyOutDir
+        env:
+          VITE_AMBIENTE: v2
+          BASE_PATH: /financas-app/v2/
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL_V2 }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY_V2 }}
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: app/dist

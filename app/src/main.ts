@@ -10,6 +10,12 @@ import { renderResumo } from './pages/resumo';
 import { renderConfiguracao } from './pages/configuracao';
 import { renderTransacoes } from './pages/transacoes';
 
+// Build do projeto-copia (ESPECIFICACAO.md 14.18): faixa fixa em todas as
+// telas, inclusive o login, para nunca confundir com o app de producao.
+if (import.meta.env.VITE_AMBIENTE === 'v2') {
+  document.body.insertAdjacentHTML('afterbegin', '<div class="faixa-ambiente">v2 · teste da integracao bancaria</div>');
+}
+
 const ABAS = [
   { path: '/', label: 'Lancar' },
   { path: '/parcelamento', label: 'Parcelar' },

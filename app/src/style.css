@@ -347,3 +347,16 @@ button:disabled {
 .msg.juros {
   color: var(--cor-alerta);
 }
+
+/* Faixa do build v2 (projeto-copia da integracao Open Finance). */
+.faixa-ambiente {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  background: var(--cor-alerta);
+  color: #1a1206;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+}
