@@ -9,7 +9,7 @@ set role postgres;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
 
-select plan(6);
+select plan(7);
 
 create temp view objetos as
 select c.oid, c.relname, c.relkind
@@ -44,11 +44,22 @@ select is(
 -- O que o app precisa continua liberado.
 select is(
   (select string_agg(relname, ', ') from objetos
-   where relkind = 'r' and not (has_table_privilege('authenticated', oid, 'SELECT')
+   where relkind = 'r'
+     and relname not in ('transacoes_bancarias', 'contas_pluggy', 'conexoes_pluggy')
+     and not (has_table_privilege('authenticated', oid, 'SELECT')
       and has_table_privilege('authenticated', oid, 'INSERT')
       and has_table_privilege('authenticated', oid, 'UPDATE')
       and has_table_privilege('authenticated', oid, 'DELETE'))),
   null, 'authenticated mantem leitura e escrita nas tabelas (protegidas pelo RLS)');
+
+-- Tabelas da integracao bancaria: o app so le; escreve por RPC (14.11).
+select is(
+  (select string_agg(relname, ', ') from objetos
+   where relname in ('transacoes_bancarias', 'contas_pluggy', 'conexoes_pluggy')
+     and (has_table_privilege('authenticated', oid, 'INSERT')
+       or has_table_privilege('authenticated', oid, 'UPDATE')
+       or has_table_privilege('authenticated', oid, 'DELETE'))),
+  null, 'authenticated nao escreve direto nas tabelas da integracao');
 
 select is(
   (select string_agg(relname, ', ') from objetos

@@ -1571,3 +1571,46 @@ entra pelas faturas futuras. Com a integração, ele pode vir de `GET /accounts`
 - **Resumo:** o bloco "Reservas dos itens estimados" saiu da tela a pedido do
   usuário (só visual; nenhum cálculo usa `v_reserva_estimados`, que segue no
   banco para o Power BI).
+
+### 14.19 Fase C — schema e motor (concluída no local e no v2, 28/11/2026)
+
+Migrations `20261128000002_integracao_tabelas`, `…03_integracao_motor`,
+`…04_integracao_views`. **Aplicadas só no local e no v2** — a produção continua
+sem a integração (ver o aviso no fim desta seção).
+
+- **Tabelas:** `transacoes_bancarias` (staging; `sentido` já em
+  `tipo_lancamento`; `candidatos` jsonb; `bloquear_auto`; `vinculo_anterior`
+  para desfazer), `contas_pluggy` (contas e saldo, base do "Saldo de hoje"
+  automático), `conexoes_pluggy` (saúde), `regras_categoria`, e
+  `avulsos.transacao_banco_id`. `eventos_pluggy` não foi criada (sem webhook,
+  14.16); `faturas_cartao` fica para a Fase F. O app só **lê** as tabelas da
+  integração (RLS só com policy de SELECT); escreve por RPC.
+- **Motor `casar_transacoes_bancarias(uid)`** (`security definer`, filtro
+  explícito por usuário): liquidação de fatura → parcela cadastrada →
+  recorrente → lançamento manual → sugestão de categoria pelas regras.
+  Casa sozinho só com **um** candidato inequívoco; recorrente exige ainda valor
+  fixo exato e evidência além do valor (descrição parecida por `pg_trgm`, ou,
+  fora do cartão, data a ±3 dias do dia previsto). O resto vira `candidatos`.
+- **Contagem:** `v_banco_provisorio` (cartão/débito, para revisar, **sem
+  candidato**, não transferência própria) entra em `v_fluxo` como `origem =
+  'banco'`, com a nova coluna `provisorio`. Views da tela: `v_para_revisar`
+  (com `conta_no_saldo`), `v_resumo_banco`, `v_saude_conexoes`.
+- **RPCs:** `confirmar_transacao` (vira avulso e ensina a regra de categoria),
+  `ignorar_transacao`, `vincular_transacao`, `desfazer_transacao` (bloqueia o
+  re-casamento automático daquela transação).
+- **Integridade:** trigger impede o cliente de definir
+  `avulsos.transacao_banco_id` direto (a FK não passa pelo RLS); apagar no app
+  um avulso/parcelamento/execução vinculado devolve a transação para "Para
+  revisar" (o gasto continua contado, agora como provisório).
+- **Portões:** Portão 3 (`06_contagem_unica.sql`, 30 casos: o total do ciclo
+  só muda quando um gasto passa a contar ou deixa de contar, nunca quando troca
+  de caminho; intruso não age sobre transação alheia) e Portão 4 (`02_rls_leak`
+  estendido às tabelas novas; `05_privilegios`). 104/104 no local e no v2;
+  impressão digital dos cálculos idêntica antes e depois nos dois. Visitante
+  pela API do v2: tabelas novas vazias, views e motor com permissão negada.
+
+> **Aviso para o próximo `db push` na produção:** as migrations da Fase C estão
+> no repositório. Um push rotineiro na produção as aplicaria junto (tabelas
+> vazias, sem efeito nos números, mas contra a decisão de manter a produção sem
+> a integração até a validação). Antes de qualquer push na produção, decidir:
+> aplicar junto ou empurrar só a migration necessária.
