@@ -13,7 +13,6 @@ type ResumoCiclo = {
 };
 
 type PrevisaoLinha = { ciclo: string; saldo_projetado: number; juros_cheque_especial?: number };
-type ReservaLinha = { descricao: string; reserva_acumulada: number };
 type CategoriaLinha = { categoria_nome: string; total: number };
 
 // Ordem fixa (nao ciclar): paleta categorica validada p/ modo escuro contra
@@ -37,24 +36,23 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
     return;
   }
 
-  // Previsao, alertas e reservas nao mudam com a navegacao entre meses --
-  // sao projecoes/acumulados a partir do historico inteiro, nao do ciclo
-  // que esta sendo visualizado. So o card do ciclo (e o saldo acumulado
-  // dentro dele) mudam.
-  const [previsaoRes, alertasRes, reservasRes] = await Promise.all([
+  // Previsao e alertas nao mudam com a navegacao entre meses -- sao projecoes
+  // a partir do historico inteiro, nao do ciclo que esta sendo visualizado.
+  // So o card do ciclo (e o saldo acumulado dentro dele) mudam.
+  // (As reservas dos itens estimados sairam da tela a pedido do usuario em
+  // nov/2026; v_reserva_estimados continua no banco para o Power BI.)
+  const [previsaoRes, alertasRes] = await Promise.all([
     supabase.from('v_previsao').select('ciclo, saldo_projetado, juros_cheque_especial').order('ciclo'),
     supabase.from('v_alertas').select('ciclo, saldo_projetado').order('ciclo'),
-    supabase.from('v_reserva_estimados').select('descricao, reserva_acumulada').order('descricao'),
   ]);
 
-  if (previsaoRes.error || alertasRes.error || reservasRes.error) {
+  if (previsaoRes.error || alertasRes.error) {
     page.innerHTML = `<p class="msg erro">Erro ao carregar o resumo.</p>`;
     return;
   }
 
   const previsao = (previsaoRes.data ?? []) as PrevisaoLinha[];
   const alertas = (alertasRes.data ?? []) as PrevisaoLinha[];
-  const reservas = (reservasRes.data ?? []) as ReservaLinha[];
 
   const painelFixo = `
     ${
@@ -73,15 +71,6 @@ export async function renderResumo(page: HTMLElement): Promise<void> {
               ? ` <span class="msg juros">(inclui ${formatBRL(-p.juros_cheque_especial)} de juros do cheque especial)</span>`
               : ''
           }</li>`).join('')}</ul>`
-    }
-
-    ${
-      reservas.length > 0
-        ? `<h2>Reservas dos itens estimados</h2>
-           <p class="msg">Diferenca acumulada entre o previsto e o realizado nos ciclos ja
-             confirmados -- gastou menos que o provisionado, guarda; gastou mais, consome.</p>
-           <ul>${reservas.map((r) => `<li>${r.descricao}: ${formatBRL(r.reserva_acumulada)}</li>`).join('')}</ul>`
-        : ''
     }
   `;
 

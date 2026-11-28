@@ -13,7 +13,7 @@ set role postgres;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
 
-select plan(23);
+select plan(26);
 
 -- Fixture: config de um usuario de teste, necessaria para fatura_fecha /
 -- fatura_vence / ciclo_caixa(credito), que leem a linha de config do usuario.
@@ -22,6 +22,23 @@ values ('11111111-1111-1111-1111-111111111111', 'teste-calendario@local.test');
 
 insert into config (user_id, dia_fechamento, dia_vencimento, horizonte_meses)
 values ('11111111-1111-1111-1111-111111111111', 27, 3, 3);
+
+-- As funcoes sem uid usam o usuario logado (migration 20261128000001).
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+-- Segundo usuario com outro cartao: prova que cada um le a PROPRIA config
+-- mesmo sem RLS (role postgres), o bug que o teste 04 pegou no projeto v2.
+insert into auth.users (id, email)
+values ('22222222-2222-2222-2222-222222222222', 'teste-calendario-2@local.test');
+insert into config (user_id, dia_fechamento, dia_vencimento, horizonte_meses)
+values ('22222222-2222-2222-2222-222222222222', 10, 20, 3);
+
+select is(fatura_vence('2026-09-10'::date, '11111111-1111-1111-1111-111111111111'), '2026-10-03'::date,
+  'usuario 1 (fecha 27, vence 3): compra 10/set vence 03/out');
+select is(fatura_vence('2026-09-10'::date, '22222222-2222-2222-2222-222222222222'), '2026-10-20'::date,
+  'usuario 2 (fecha 10, vence 20): compra 10/set vence 20/out -- cada um le a propria config');
+select is(ciclo_caixa('2026-09-10'::date, 'credito'::meio_pagamento), '2026-10-01'::date,
+  'versao sem uid usa o usuario logado (usuario 1), nao uma linha qualquer');
 
 -- data_recebimento: penultimo dia do mes, antecipado quando cai em fim de semana
 select is(data_recebimento('2026-01-01'), '2026-01-30'::date, 'jan/2026: penultimo dia e sexta, sem ajuste');

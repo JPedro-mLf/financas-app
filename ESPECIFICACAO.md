@@ -1548,3 +1548,26 @@ entra pelas faturas futuras. Com a integração, ele pode vir de `GET /accounts`
   dá para revisar o volume. Se não der: restaurar esse backup e importar só a
   partir de uma **data de virada** (o histórico fica como foi lançado à mão).
   Isso substitui a pendência 4 de 14.15.
+
+**Atualização (28/11/2026)**
+
+- **Endurecimento aplicado nos três ambientes** (local, v2, produção; backup da
+  produção antes, em `financas-backups/2026-11-28_antes_endurecimento/`):
+  migration `20261128000000_endurecer_privilegios`. `anon` só lê as tabelas
+  (zero linhas pelo RLS) e não lê views; `authenticated` lê e escreve nas
+  tabelas e só lê as views; ninguém da API tem `TRUNCATE`. Teste novo
+  `05_privilegios.sql` varre o catálogo e falha se uma migration futura reabrir
+  algo. Demonstrado antes, localmente e com rollback, que mesmo com a escrita
+  aberta o RLS já barrava tudo (0 linhas alteradas/apagadas, insert recusado):
+  era uma segunda tranca, não um buraco aberto.
+- **Funções de calendário por usuário**
+  (`20261128000001_calendario_por_usuario`): `fatura_fecha`, `fatura_vence`,
+  `ciclo_caixa` e `fatura_vencimento_no_ciclo` ganham versão com `uid`, usada
+  pelas views com o dono da linha. Antes liam `from config` sem filtro e, sem
+  RLS (testes, `security definer`, Edge Functions com service_role), pegavam a
+  config de qualquer usuário. Pré-requisito da ingestão (14.8). Impressão
+  digital de `v_fluxo` e `v_saldo_acumulado` idêntica antes/depois nos três
+  ambientes.
+- **Resumo:** o bloco "Reservas dos itens estimados" saiu da tela a pedido do
+  usuário (só visual; nenhum cálculo usa `v_reserva_estimados`, que segue no
+  banco para o Power BI).
