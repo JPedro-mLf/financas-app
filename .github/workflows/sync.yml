@@ -1,14 +1,17 @@
 name: Sincronizacao bancaria (v2)
 
-# Dispara a Edge Function pluggy-sync do projeto v2 uma vez por dia
-# (ESPECIFICACAO.md 14.8/14.16: sem webhook; o Meu Pluggy so atualiza a cada
-# 24 h). O segredo SYNC_SECRET_V2 so dispara a sincronizacao -- nao le dados.
+# Dispara a Edge Function pluggy-sync do projeto v2 duas vezes por dia
+# (ESPECIFICACAO.md 14.8/14.16/14.29: sem webhook). O Meu Pluggy atualiza cada
+# banco a cada 24 h, em horarios proprios (uns de madrugada, outros a tarde);
+# ler de manha e a noite pega cada atualizacao no mesmo dia. Leitura e gratis.
+# O segredo SYNC_SECRET_V2 so dispara a sincronizacao -- nao le dados.
 # A funcao rele os ultimos 14 dias de cada conta, grava so os campos
 # permitidos e roda o motor de casamento. Pula enquanto o segredo nao existir.
 
 on:
   schedule:
     - cron: '30 11 * * *'   # 08:30 em Brasilia
+    - cron: '30 0 * * *'    # 21:30 em Brasilia
   workflow_dispatch:
 
 jobs:
