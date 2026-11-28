@@ -1669,6 +1669,9 @@ aplicado no local e no v2 (backup antes em
    `parcela_do_texto()` (data "21/11" não conta). Filtro próprio "Parceladas"
    (`v_parceladas_banco`): "confere com: <parcelamento>" quando casa, ou "sem
    parcelamento cadastrado" (lembrete para cadastrar na aba Parcelar).
+   **Risco aceito pelo usuário:** uma compra parcelada esquecida (sem cadastro)
+   não conta em lugar nenhum. Parcelamentos são pouco frequentes e de impacto
+   previsível; o controle manual é preferível.
 2. **Nome no banco aprendido** (`recorrentes.nome_banco`): o primeiro vínculo
    manual a um recorrente memoriza a descrição normalizada do banco; depois o
    motor casa sozinho por ela, aceitando valor até 20% diferente. Caso real:
