@@ -13,7 +13,7 @@ set role postgres;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
 
-select plan(43);
+select plan(49);
 
 insert into auth.users (id, email) values
   ('66666666-6666-6666-6666-666666666666', 'teste-contagem@local.test'),
@@ -230,6 +230,33 @@ select is((select valor from v_recorrentes_ciclo
            where origem_id = 'e0000000-0000-0000-0000-000000000003'
              and ciclo = (ciclo(current_date) + interval '1 month')::date),
   350.00::numeric, 'ciclo futuro: envelope cheio');
+
+-- ===== Transferencias do proprio CPF e juros (migration 20261128000007)
+create temp table total_antes as select pg_temp.total('2030-04-01') as v;
+insert into transacoes_bancarias (id, user_id, pluggy_id, chave_dedupe, conta_pluggy_id, tipo_conta, data, valor, sentido, descricao, tipo_operacao, meio_inferido, transferencia_propria)
+values
+  ('b0000000-0000-0000-0000-000000000019', '66666666-6666-6666-6666-666666666666', 'p-t19', 'k-t19', 'conta',  'BANK', '2030-04-20', 300,   'despesa', 'PIX PARA POUPANCA',  'PIX', 'pix', true),
+  ('b0000000-0000-0000-0000-000000000020', '66666666-6666-6666-6666-666666666666', 'p-t20', 'k-t20', 'conta2', 'BANK', '2030-04-20', 300,   'receita', 'PIX RECEBIDO DE MIM', 'PIX', 'pix', true),
+  ('b0000000-0000-0000-0000-000000000021', '66666666-6666-6666-6666-666666666666', 'p-t21', 'k-t21', 'conta',  'BANK', '2030-04-22', 500,   'receita', 'PIX DO BB',           'PIX', 'pix', true),
+  ('b0000000-0000-0000-0000-000000000022', '66666666-6666-6666-6666-666666666666', 'p-t22', 'k-t22', 'conta',  'BANK', '2030-04-23', 12.34, 'despesa', 'JUROS CHEQUE ESPECIAL', 'ENCARGOS_JUROS_CHEQUE_ESPECIAL', 'debito', null);
+select casar_transacoes_bancarias('66666666-6666-6666-6666-666666666666');
+select is(pg_temp.estado('b0000000-0000-0000-0000-000000000019'), 'vinculada/interna',
+  'saida para si com entrada igual em outra conta conectada: transferencia interna');
+select is(pg_temp.estado('b0000000-0000-0000-0000-000000000020'), 'vinculada/interna', '...as duas pontas do par');
+select is(pg_temp.total('2030-04-01'), (select v from total_antes) + 500 - 12.34,
+  'interna nao conta; entrada do proprio CPF sem par (conta nao conectada, ex. BB) conta; juros contam');
+select is((select conta_no_saldo from v_para_revisar where id = 'b0000000-0000-0000-0000-000000000014'), false,
+  'saida para si sem par fica para revisar, fora do saldo');
+set role authenticated;
+select ignorar_transferencias_proprias();
+set role postgres;
+select is(pg_temp.estado('b0000000-0000-0000-0000-000000000014'), 'ignorada',
+  'ignorar todas para mim: so as saidas sem par');
+set role authenticated;
+select desfazer_transacao('b0000000-0000-0000-0000-000000000019');
+set role postgres;
+select is(pg_temp.estado('b0000000-0000-0000-0000-000000000020'), 'para_revisar',
+  'desfazer uma interna devolve as duas pontas');
 
 -- Seguranca: outro usuario nao age sobre transacao alheia.
 set role authenticated;

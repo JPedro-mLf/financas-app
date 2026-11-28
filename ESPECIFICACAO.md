@@ -1694,3 +1694,30 @@ aplicado no local e no v2 (backup antes em
 Depois da ressincronização: 102 parceladas conferem, 219 sem cadastro; para
 revisar, 513 contam no saldo, 565 fora (Pix sem CPF), 15 com sugestão; casadas:
 138 lançamentos, 22 recorrentes, 65 pagamentos de fatura.
+
+### 14.22 Transferências do próprio CPF e juros (28/11/2026) [decidido]
+
+Migration `20261128000007_transferencias_proprias`; `OWNER_CPF` cadastrado no
+v2 (validado: 11 dígitos, verificadores corretos, nunca exibido). Backup antes
+em `financas-backups/2026-11-28_v2_antes_transferencias/`. 123/123 testes.
+
+- **Conta não conectada (Banco do Brasil).** O usuário recebe depósitos no BB,
+  que não está no Pluggy (limite de 5 conexões), e repassa para as contas
+  conectadas. Tratar todo Pix do próprio CPF como "interno" esconderia essa
+  entrada. Verificado nos dados antes de decidir: 50 saídas e 50 entradas do
+  próprio CPF formam pares exatos (mesma soma, ao centavo); 23 entradas
+  (R$ 12.683) não têm par.
+- **Regra (pareamento):** saída + entrada do próprio CPF, mesmo valor, ±1 dia,
+  em contas conectadas diferentes → `vinculo_tipo = 'interna'` nas duas pontas,
+  automático (provado pelos dois lados), não conta. Entrada do próprio CPF sem
+  par → conta como entrada (veio de conta não conectada). Saída para o próprio
+  CPF sem par → fica para revisar, fora do saldo (pode ser guardar dinheiro ou
+  pagar algo pelo BB); botão "Ignorar transferências para mim sem par"
+  (`ignorar_transferencias_proprias()`), cada uma com Desfazer. Desfazer uma
+  interna desfaz o par. Funciona para qualquer conta não conectada, sem gravar
+  o banco do outro lado.
+- **Juros do cheque especial** (`ENCARGOS_JUROS_CHEQUE_ESPECIAL`) contam como
+  despesa na hora.
+- **Volume depois (v2):** para revisar 1.013 (816 já contam no saldo — revisar
+  só dá categoria; 182 fora do saldo; 15 com sugestão); 80 internas (40 pares);
+  6 saídas próprias sem par; parceladas: 102 conferem, 219 sem cadastro.

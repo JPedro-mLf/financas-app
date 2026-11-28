@@ -83,6 +83,7 @@ const ROTULO_VINCULO: Record<string, string> = {
   parcelamento: 'parcelamento',
   execucao: 'recorrente',
   liquidacao: 'pagamento de fatura',
+  interna: 'transferencia entre suas contas',
 };
 
 function deslocarMeses(ciclo: string, meses: number): string {
@@ -110,7 +111,7 @@ async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Pr
   page.innerHTML = `<p>Carregando...</p>`;
 
   const [resumoRes, itensRes, revisadasRes, categoriasRes, periodo, parceladasRes] = await Promise.all([
-    supabase.from('v_resumo_banco').select('itens_para_revisar, valor_provisorio_no_saldo, valor_fora_do_saldo').maybeSingle(),
+    supabase.from('v_resumo_banco').select('itens_para_revisar, valor_provisorio_no_saldo, valor_fora_do_saldo, saidas_proprias_sem_par').maybeSingle(),
     supabase
       .from('v_para_revisar')
       .select('id, data, valor, sentido, descricao, tipo_conta, tipo_operacao, meio_inferido, parcela_numero, parcela_total, transferencia_propria, candidatos, categoria_sugerida_id, banco, conta_no_saldo')
@@ -141,11 +142,17 @@ async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Pr
     return;
   }
 
-  const resumo = resumoRes.data as { itens_para_revisar: number; valor_provisorio_no_saldo: number; valor_fora_do_saldo: number } | null;
+  const resumo = resumoRes.data as {
+    itens_para_revisar: number;
+    valor_provisorio_no_saldo: number;
+    valor_fora_do_saldo: number;
+    saidas_proprias_sem_par: number;
+  } | null;
   const todos = (itensRes.data ?? []) as ItemRevisar[];
   const categorias = (categoriasRes.data ?? []) as Categoria[];
   const parceladas = (parceladasRes.data ?? []) as ItemParcelado[];
   const semCadastro = parceladas.filter((p) => p.situacao === 'sem_cadastro').length;
+  const saidasProprias = resumo?.saidas_proprias_sem_par ?? 0;
   const itens = todos.filter((i) =>
     filtro === 'todas' ? true
     : filtro === 'no_saldo' ? i.conta_no_saldo
@@ -177,6 +184,17 @@ async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Pr
     </div>
 
     ${
+      filtro !== 'revisadas' && filtro !== 'parceladas' && saidasProprias > 0
+        ? `<div class="acao-lote">
+            <button type="button" class="btn-secundario" id="btn-ignorar-proprias">
+              Ignorar transferencias para mim sem par (${saidasProprias})
+            </button>
+            <p class="msg">Saidas do seu CPF para conta nao conectada (todos os meses). Cada uma fica em
+              Revisadas, com Desfazer.</p>
+          </div>`
+        : ''
+    }
+    ${
       filtro === 'revisadas'
         ? renderRevisadas((revisadasRes.data ?? []) as ItemRevisado[])
         : filtro === 'parceladas'
@@ -195,6 +213,18 @@ async function renderCiclo(page: HTMLElement, ciclo: string, filtro: Filtro): Pr
 
   const recarregar = () => renderCiclo(page, ciclo, filtro);
   wireItens(page, recarregar);
+
+  page.querySelector<HTMLButtonElement>('#btn-ignorar-proprias')?.addEventListener('click', async (e) => {
+    const botao = e.currentTarget as HTMLButtonElement;
+    botao.disabled = true;
+    const { error: erro } = await supabase.rpc('ignorar_transferencias_proprias');
+    if (erro) {
+      botao.disabled = false;
+      botao.insertAdjacentHTML('afterend', `<p class="msg erro">Erro: ${escapar(erro.message)}</p>`);
+      return;
+    }
+    await recarregar();
+  });
 }
 
 function contar(itens: ItemRevisar[], f: Filtro): number {
@@ -209,8 +239,12 @@ function contar(itens: ItemRevisar[], f: Filtro): number {
 
 function rotuloSituacao(i: ItemRevisar): string {
   if (i.candidatos.length > 0) return '<span class="selo selo-sugestao">sugestao</span>';
+  // Entrada do proprio CPF que sobrou sem par: veio de conta nao conectada (ex. BB).
+  if (i.conta_no_saldo && i.transferencia_propria) {
+    return '<span class="selo selo-saldo">de conta sua nao conectada -- ja conta</span>';
+  }
   if (i.conta_no_saldo) return '<span class="selo selo-saldo">ja conta no saldo</span>';
-  if (i.transferencia_propria) return '<span class="selo">para voce mesmo?</span>';
+  if (i.transferencia_propria) return '<span class="selo">para conta sua nao conectada?</span>';
   return '<span class="selo">fora do saldo</span>';
 }
 

@@ -442,3 +442,5 @@ button:disabled {
   white-space: nowrap;
 }
 .selo-confere { color: var(--cor-sucesso); border-color: var(--cor-sucesso); white-space: normal; }
+.acao-lote { margin-bottom: 1rem; }
+.acao-lote .msg { margin: 0.35rem 0 0; font-size: 0.78rem; }
