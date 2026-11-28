@@ -4,7 +4,7 @@ import { periodoDoCiclo } from '../lib/ciclo';
 
 type LinhaFluxo = {
   origem_id: string;
-  origem: 'avulso' | 'recorrente' | 'parcelamento' | 'banco';
+  origem: 'avulso' | 'recorrente' | 'parcelamento' | 'banco' | 'desconto';
   descricao: string;
   tipo: 'receita' | 'despesa';
   valor: number;
@@ -148,6 +148,8 @@ function renderListaDetalhada(linhas: LinhaFluxo[]): string {
           ${
             l.origem === 'banco'
               ? '<p class="msg">Transacao do banco ainda nao revisada -- ja conta no saldo como provisoria. Confirme, ignore ou vincule na aba Revisar.</p>'
+              : l.origem === 'desconto'
+              ? '<p class="msg">Desconto em folha, calculado sobre o salario do mes. Ajuste a regra em Configuracao.</p>'
               : l.origem === 'parcelamento'
               ? '<p class="msg">Parcela de um parcelamento -- valor da serie inteira, so leitura. Ajuste em Supabase Studio se precisar.</p>'
               : `<div class="linha-controles">
@@ -184,7 +186,7 @@ function wireEdicao(page: HTMLElement, ciclo: string): void {
     const origem = li.dataset.origem as LinhaFluxo['origem'];
     // Parcela e transacao do banco sao so leitura aqui (a do banco se revisa
     // na aba Revisar).
-    if (origem === 'parcelamento' || origem === 'banco') return;
+    if (origem === 'parcelamento' || origem === 'banco' || origem === 'desconto') return;
 
     const msg = li.querySelector<HTMLParagraphElement>('.msg-linha')!;
     const valorInput = li.querySelector<HTMLInputElement>('.valor-editar')!;

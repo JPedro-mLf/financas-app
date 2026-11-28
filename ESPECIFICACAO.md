@@ -1721,3 +1721,32 @@ em `financas-backups/2026-11-28_v2_antes_transferencias/`. 123/123 testes.
 - **Volume depois (v2):** para revisar 1.013 (816 já contam no saldo — revisar
   só dá categoria; 182 fora do saldo; 15 com sugestão); 80 internas (40 pares);
   6 saídas próprias sem par; parceladas: 102 conferem, 219 sem cadastro.
+
+### 14.23 Descontos em folha e salário pelo líquido (28/11/2026) [decidido]
+
+Migration `20261128000008_descontos_e_salario_liquido`; teste
+`07_salario_liquido.sql` (131/131 no local e no v2). Backup do v2 antes em
+`financas-backups/2026-11-28_v2_antes_salario_liquido/`.
+
+- **Bug antigo (desde a v1):** `descontos_folha` (INSS %, seguro, …) era só
+  cadastro — nenhuma view o aplicava. A previsão contava o salário **bruto**
+  inteiro (~R$ 347/mês otimista com INSS 9,042% e seguro). Agora cada desconto
+  é uma linha de despesa (`v_descontos_ciclo`, origem `desconto`, meio folha)
+  em todo ciclo com salário de folha, com o status do salário. Campo opcional
+  `descontos_folha.categoria_id` (sem ele, conta no saldo mas fica fora do
+  ranking por categoria). "Plano dentário" R$ 14,87 cadastrado no v2.
+- **Salário casa pelo líquido:** líquido esperado = bruto − descontos −
+  recorrentes de folha (ex. almoço R$ 21). Depósito até 10% do esperado (tipo
+  `FOLHA_PAGAMENTO`, ou nome no banco aprendido) casa sozinho; até 40% vira
+  sugestão. O ciclo é o de `data + 5 dias` (o salário cai dias antes do dia de
+  recebimento do app). Ao casar, `bruto_do_liquido()` grava como bruto
+  realizado o valor que, menos os descontos, dá o líquido do banco **ao
+  centavo** — hora extra e reajuste ajustam o bruto; cada desconto segue
+  visível. Aproximação: o INSS real é progressivo; o percentual cadastrado é
+  aplicado sobre o bruto ajustado.
+- **Resultado no v2:** 4 salários casados sozinhos (ago–nov/2026); o de
+  30/07 (R$ 2.859, provável mês incompleto) virou sugestão.
+- **Produção:** a correção dos descontos depende do `v_fluxo` da integração;
+  levá-la à produção traz junto as migrations da integração (tabelas vazias) e
+  o envelope dos estimados (muda números dos estimados da produção). Aguarda o
+  ok explícito do usuário.
