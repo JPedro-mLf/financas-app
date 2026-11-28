@@ -360,3 +360,84 @@ button:disabled {
   font-weight: 700;
   padding: 0.25rem 0.5rem;
 }
+
+/* Tela Revisar (integracao bancaria). */
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.chip {
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  color: var(--cor-texto-fraco);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+}
+
+.chip.ativo {
+  border-color: var(--cor-acento);
+  color: var(--cor-texto);
+}
+
+.resumo-revisar p {
+  margin: 0.2rem 0;
+  font-size: 0.9rem;
+}
+
+.selo {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 1rem;
+  border: 1px solid var(--cor-borda);
+  color: var(--cor-texto-fraco);
+  white-space: nowrap;
+}
+
+.selo-saldo { color: var(--cor-alerta); border-color: var(--cor-alerta); }
+.selo-sugestao { color: var(--cor-acento); border-color: var(--cor-acento); }
+
+.candidatos {
+  border-left: 2px solid var(--cor-acento);
+  padding-left: 0.6rem;
+  margin: 0 0 0.6rem;
+}
+
+.candidatos .msg { margin: 0 0 0.3rem; }
+
+.candidato {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  margin-bottom: 0.3rem;
+}
+
+.btn-secundario {
+  background: var(--cor-superficie-2);
+  border: 1px solid var(--cor-borda);
+  color: var(--cor-texto);
+  font-weight: 500;
+}
+
+.candidato .btn-secundario {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.lista-revisar .linha-topo span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  margin-right: 0.5rem;
+}
+
+.lista-revisar .linha-topo span:last-child {
+  white-space: nowrap;
+}

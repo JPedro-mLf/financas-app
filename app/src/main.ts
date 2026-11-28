@@ -9,6 +9,7 @@ import { renderCicloAtual } from './pages/ciclo-atual';
 import { renderResumo } from './pages/resumo';
 import { renderConfiguracao } from './pages/configuracao';
 import { renderTransacoes } from './pages/transacoes';
+import { renderRevisar } from './pages/revisar';
 
 // Build do projeto-copia (ESPECIFICACAO.md 14.18): faixa fixa em todas as
 // telas, inclusive o login, para nunca confundir com o app de producao.
@@ -16,14 +17,19 @@ if (import.meta.env.VITE_AMBIENTE === 'v2') {
   document.body.insertAdjacentHTML('afterbegin', '<div class="faixa-ambiente">v2 · teste da integracao bancaria</div>');
 }
 
+// A aba Revisar (integracao bancaria, ESPECIFICACAO.md 14.11) so existe no build
+// v2 por enquanto: a producao ainda nao tem as tabelas da integracao.
+const EH_V2 = import.meta.env.VITE_AMBIENTE === 'v2';
+
 const ABAS = [
   { path: '/', label: 'Lancar' },
   { path: '/parcelamento', label: 'Parcelar' },
   { path: '/ciclo', label: 'Ciclo' },
   { path: '/transacoes', label: 'Extrato' },
+  ...(EH_V2 ? [{ path: '/revisar', label: 'Revisar' }] : []),
   { path: '/resumo', label: 'Resumo' },
   { path: '/config', label: 'Config' },
-] as const;
+];
 
 function shell(root: HTMLElement, ativa: string): HTMLElement {
   root.innerHTML = `
@@ -53,6 +59,7 @@ autenticada('/ciclo', renderCicloAtual);
 autenticada('/transacoes', renderTransacoes);
 autenticada('/resumo', renderResumo);
 autenticada('/config', renderConfiguracao);
+if (EH_V2) autenticada('/revisar', renderRevisar);
 
 const appRoot = document.querySelector<HTMLDivElement>('#app')!;
 startRouter(appRoot);

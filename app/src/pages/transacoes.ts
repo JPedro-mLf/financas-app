@@ -4,7 +4,7 @@ import { periodoDoCiclo } from '../lib/ciclo';
 
 type LinhaFluxo = {
   origem_id: string;
-  origem: 'avulso' | 'recorrente' | 'parcelamento';
+  origem: 'avulso' | 'recorrente' | 'parcelamento' | 'banco';
   descricao: string;
   tipo: 'receita' | 'despesa';
   valor: number;
@@ -146,7 +146,9 @@ function renderListaDetalhada(linhas: LinhaFluxo[]): string {
               .join(' · ')}
           </p>
           ${
-            l.origem === 'parcelamento'
+            l.origem === 'banco'
+              ? '<p class="msg">Transacao do banco ainda nao revisada -- ja conta no saldo como provisoria. Confirme, ignore ou vincule na aba Revisar.</p>'
+              : l.origem === 'parcelamento'
               ? '<p class="msg">Parcela de um parcelamento -- valor da serie inteira, so leitura. Ajuste em Supabase Studio se precisar.</p>'
               : `<div class="linha-controles">
                   <input type="number" step="0.01" class="valor-editar" value="${l.valor}" aria-label="Valor">
@@ -180,7 +182,9 @@ function wireEdicao(page: HTMLElement, ciclo: string): void {
   page.querySelectorAll<HTMLLIElement>('.lista-ciclo li').forEach((li) => {
     const origemId = li.dataset.id!;
     const origem = li.dataset.origem as LinhaFluxo['origem'];
-    if (origem === 'parcelamento') return;
+    // Parcela e transacao do banco sao so leitura aqui (a do banco se revisa
+    // na aba Revisar).
+    if (origem === 'parcelamento' || origem === 'banco') return;
 
     const msg = li.querySelector<HTMLParagraphElement>('.msg-linha')!;
     const valorInput = li.querySelector<HTMLInputElement>('.valor-editar')!;

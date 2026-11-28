@@ -1,0 +1,31 @@
+name: Sincronizacao bancaria (v2)
+
+# Dispara a Edge Function pluggy-sync do projeto v2 uma vez por dia
+# (ESPECIFICACAO.md 14.8/14.16: sem webhook; o Meu Pluggy so atualiza a cada
+# 24 h). O segredo SYNC_SECRET_V2 so dispara a sincronizacao -- nao le dados.
+# A funcao rele os ultimos 14 dias de cada conta, grava so os campos
+# permitidos e roda o motor de casamento. Pula enquanto o segredo nao existir.
+
+on:
+  schedule:
+    - cron: '30 11 * * *'   # 08:30 em Brasilia
+  workflow_dispatch:
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar pluggy-sync
+        env:
+          URL_V2: ${{ secrets.SUPABASE_URL_V2 }}
+          SEGREDO: ${{ secrets.SYNC_SECRET_V2 }}
+        run: |
+          if [ -z "$URL_V2" ] || [ -z "$SEGREDO" ]; then
+            echo "Secrets do v2 nao cadastrados; pulando."
+            exit 0
+          fi
+          # Resposta tem so contagens (nenhum dado bancario).
+          curl -sS --fail-with-body -X POST "$URL_V2/functions/v1/pluggy-sync" \
+            -H "x-sync-secret: $SEGREDO" \
+            -H "Content-Type: application/json" \
+            -d '{"dias":14}'

@@ -1614,3 +1614,44 @@ sem a integração (ver o aviso no fim desta seção).
 > vazias, sem efeito nos números, mas contra a decisão de manter a produção sem
 > a integração até a validação). Antes de qualquer push na produção, decidir:
 > aplicar junto ou empurrar só a migration necessária.
+
+### 14.20 Fases D, E e G — ingestão, tela Revisar e importação (v2, 28/11/2026)
+
+- **Edge Function `pluggy-sync`** (`supabase/functions/pluggy-sync`), publicada
+  no v2 sem verificação de JWT: a porta é o cabeçalho `x-sync-secret`
+  (comparação em tempo constante; sem ele ou errado → 401, sem efeito — Portão
+  5 verificado). Escreve direto no Postgres por `SUPABASE_DB_URL` (não depende
+  das chaves da API, inclusive das legacy desativadas). Lista fixa de campos;
+  `paymentData` descartado (só `transferencia_propria`, se `OWNER_CPF` existir —
+  **ainda não cadastrado**). Chave de deduplicação: sha256 de
+  conta|data|valor|descrição + ordinal. Remoção: some da janela → `removida`
+  (vinculadas/confirmadas só ganham `removida_em`); **lista vazia não remove**
+  (sintoma de consentimento vencido). Modo `simular` conta sem gravar.
+- **Secrets do v2:** `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `PLUGGY_ITEMS`,
+  `SYNC_SECRET`, `OWNER_USER_ID` (lidos de `%USERPROFILE%\.financas\pluggy.env`
+  sem exibição). `SYNC_SECRET_V2` também está nesse arquivo, para o GitHub.
+- **Agendamento:** `.github/workflows/sync.yml`, diário às 08:30 (Brasília),
+  janela de 14 dias; pula enquanto `SYNC_SECRET_V2` não existir no GitHub.
+- **Importação dos 12 meses (Portão G):** simulação primeiro (1.639 transações,
+  nada gravado), depois a real, sobre a cópia completa e com o backup
+  `2026-11-28_v2_antes_da_pluggy`. Resultado do motor: 306 casadas sozinhas
+  (130 lançamentos manuais, 102 parcelas, 65 pagamentos de fatura, 9
+  recorrentes); 1.333 para revisar (687 provisórias = −R$ 38.947; 519 fora do
+  saldo; 127 com sugestão). Quase nenhuma provisória tem lançamento manual de
+  mesmo valor nem a 7 dias: são, na maioria, compras que não tinham sido
+  lançadas. **Ponto de atenção:** o recorrente "Combustível Mensal" (R$ 350,
+  crédito, valor fixo) é um orçamento; com o banco, cada abastecimento conta
+  como provisório **e** o orçamento segue previsto — dupla contagem a decidir
+  com o usuário (ex.: tornar estimado e vincular os abastecimentos a ele, ou
+  encerrar o recorrente).
+- **Tela "Revisar"** (`app/src/pages/revisar.ts`, só no build v2): navegação por
+  ciclo, contadores (`v_resumo_banco`), filtros (todas / contam no saldo / fora
+  do saldo / com sugestão / revisadas), categoria pré-selecionada, Confirmar,
+  Ignorar, Vincular (candidatos) e Desfazer (`v_revisadas`, migration
+  `20261128000005`). O Extrato mostra as provisórias como "Do banco, a
+  revisar", só leitura. Testada no navegador com dados fictícios locais (depois
+  apagados): confirmar troca o caminho sem mudar o total; ignorar, vincular e
+  desfazer fazem o esperado.
+- **Pendente:** "Criar parcelamento" a partir de uma compra parcelada sem
+  cadastro (14.6), banner de saúde da conexão no Resumo (14.9) e Fase F
+  (faturas). Avaliação do volume de revisão pelo usuário (decisão de 14.18).

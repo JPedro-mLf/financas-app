@@ -42,6 +42,7 @@ const ROTULO_ORIGEM: Record<string, string> = {
   avulso: 'Avulso',
   recorrente: 'Recorrente',
   parcelamento: 'Parcela',
+  banco: 'Do banco, a revisar',
 };
 
 export function rotuloOrigem(origem: string | null | undefined): string {
